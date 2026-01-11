@@ -1,15 +1,81 @@
 import { motion } from "framer-motion";
 import { ArrowLeft, Mail, Lock, User } from "lucide-react";
-import { FaGoogle, FaLinkedin } from "react-icons/fa";
-import { Link } from "react-router-dom";
+import { FaGoogle } from "react-icons/fa";
+import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "../context/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+  });
+  const [isLoading, setIsLoading] = useState(false);
+
+  const { signup, login } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const googleAuthUrl = 
+  `https://accounts.google.com/o/oauth2/v2/auth?client_id=${
+    import.meta.env.VITE_GOOGLE_CLIENT_ID
+  }&redirect_uri=${
+    import.meta.env.VITE_API_URL
+  }/auth/google/callback&response_type=code&scope=email%20profile`;
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.id]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    try {
+      let result;
+      if (isLogin) {
+        result = await login(formData.email, formData.password);
+      } else {
+        result = await signup(formData.name, formData.email, formData.password);
+      }
+
+      if (result.success) {
+        toast({
+          title: isLogin ? "Welcome back!" : "Account created!",
+          description: isLogin 
+            ? "You've successfully signed in." 
+            : "Your account has been created successfully.",
+        });
+        navigate("/dashboard");
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: result.error || "Authentication failed. Please try again.",
+        });
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleToggleMode = () => {
+    setIsLogin(!isLogin);
+    setFormData({ name: "", email: "", password: "" });
+  };
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -32,10 +98,13 @@ const Auth = () => {
 
           {/* Logo */}
           <div className="flex items-center gap-2 mb-8">
-            <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-semibold text-sm">
-                T
-              </span>
+            <div className="w-8 h-8 flex items-center justify-center">
+              <img
+                src="../../public/logo-icon.png"
+                alt="Logo"
+                className="w-full h-full object-contain"
+                loading="lazy"
+              />
             </div>
             <span className="text-foreground font-medium">Throughline</span>
           </div>
@@ -54,7 +123,12 @@ const Auth = () => {
 
           {/* Social login buttons */}
           <div className="space-y-3 mb-6">
-            <Button variant="outline" className="w-full gap-2">
+            <Button 
+              variant="outline" 
+              className="w-full gap-2" 
+              onClick={() => window.location.href = googleAuthUrl}
+              disabled={isLoading}
+            >
               <FaGoogle className="w-4 h-4" />
               Continue with Google
             </Button>
@@ -68,7 +142,7 @@ const Auth = () => {
           </div>
 
           {/* Email form */}
-          <form className="space-y-4">
+          <form className="space-y-4" onSubmit={handleSubmit}>
             {!isLogin && (
               <div className="grid gap-2">
                 <Label htmlFor="name">Full name</Label>
@@ -79,6 +153,10 @@ const Auth = () => {
                     id="name"
                     placeholder="Jane Smith"
                     className="pl-9"
+                    value={formData.name}
+                    onChange={handleChange}
+                    disabled={isLoading}
+                    required={!isLogin}
                   />
                 </div>
               </div>
@@ -93,6 +171,10 @@ const Auth = () => {
                   id="email"
                   placeholder="you@example.com"
                   className="pl-9"
+                  value={formData.email}
+                  onChange={handleChange}
+                  disabled={isLoading}
+                  required
                 />
               </div>
             </div>
@@ -106,6 +188,10 @@ const Auth = () => {
                   id="password"
                   placeholder="••••••••"
                   className="pl-9"
+                  value={formData.password}
+                  onChange={handleChange}
+                  disabled={isLoading}
+                  required
                 />
               </div>
             </div>
@@ -118,8 +204,8 @@ const Auth = () => {
               </div>
             )}
 
-            <Button type="submit" className="w-full">
-              {isLogin ? "Sign in" : "Create account"}
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Loading..." : isLogin ? "Sign in" : "Create account"}
             </Button>
           </form>
 
@@ -127,8 +213,9 @@ const Auth = () => {
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
             <button
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={handleToggleMode}
               className="text-primary hover:underline"
+              disabled={isLoading}
             >
               {isLogin ? "Sign up" : "Sign in"}
             </button>
