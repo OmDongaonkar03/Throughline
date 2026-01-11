@@ -36,8 +36,13 @@ export const AuroraHero = () => {
       <header className="absolute top-0 left-0 right-0 z-20">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-semibold text-sm">T</span>
+            <div className="w-8 h-8 flex items-center justify-center">
+              <img
+                src="../../../public/logo-icon.png"
+                alt="Logo"
+                className="w-full h-full object-contain"
+                loading="lazy"
+              />
             </div>
             <span className="text-foreground font-medium">Throughline</span>
           </Link>

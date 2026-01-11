@@ -1,16 +1,18 @@
-import { Link, useLocation } from "react-router-dom";
-import { 
-  LayoutDashboard, 
-  PenLine, 
-  FileText, 
-  Settings, 
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import {
+  LayoutDashboard,
+  PenLine,
+  FileText,
+  Settings,
   LogOut,
   Menu,
-  X
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
@@ -25,7 +27,31 @@ interface AppSidebarProps {
 
 export const AppSidebar = ({ className }: AppSidebarProps) => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+  const { toast } = useToast();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+      await logout();
+      toast({
+        title: "Logged out successfully",
+        description: "See you next time!",
+      });
+      navigate("/");
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to log out. Please try again.",
+      });
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
     <>
@@ -36,12 +62,16 @@ export const AppSidebar = ({ className }: AppSidebarProps) => {
         className="fixed top-4 left-4 z-50 lg:hidden"
         onClick={() => setIsMobileOpen(!isMobileOpen)}
       >
-        {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        {isMobileOpen ? (
+          <X className="h-5 w-5" />
+        ) : (
+          <Menu className="h-5 w-5" />
+        )}
       </Button>
 
       {/* Mobile overlay */}
       {isMobileOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setIsMobileOpen(false)}
         />
@@ -57,9 +87,17 @@ export const AppSidebar = ({ className }: AppSidebarProps) => {
       >
         {/* Logo */}
         <div className="p-6 border-b border-sidebar-border">
-          <Link to="/" className="flex items-center gap-3" onClick={() => setIsMobileOpen(false)}>
-            <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-semibold text-sm">T</span>
+          <Link
+            to="/"
+            className="flex items-center gap-3"
+            onClick={() => setIsMobileOpen(false)}
+          >
+            <div className="w-8 h-8 rounded-md flex items-center justify-center">
+              <img
+                src="../../../public/logo-icon.png"
+                alt="Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
             <span className="text-foreground font-medium">Throughline</span>
           </Link>
@@ -76,8 +114,8 @@ export const AppSidebar = ({ className }: AppSidebarProps) => {
                 onClick={() => setIsMobileOpen(false)}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors",
-                  isActive 
-                    ? "bg-primary/10 text-primary font-medium" 
+                  isActive
+                    ? "bg-primary/10 text-primary font-medium"
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                 )}
               >
@@ -90,9 +128,13 @@ export const AppSidebar = ({ className }: AppSidebarProps) => {
 
         {/* Footer */}
         <div className="p-4 border-t border-sidebar-border">
-          <button className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors w-full">
+          <button
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors w-full disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <LogOut className="w-4 h-4" />
-            <span>Log out</span>
+            <span>{isLoggingOut ? "Logging out..." : "Log out"}</span>
           </button>
         </div>
       </aside>

@@ -7,8 +7,13 @@ export const Footer = () => {
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-semibold text-xs">T</span>
+            <div className="w-6 h-6 flex items-center justify-center">
+              <img
+                src="../../public/logo-icon.png"
+                alt="Logo"
+                className="w-full h-full object-contain"
+                loading="lazy"
+              />
             </div>
             <span className="text-foreground font-medium text-sm">Throughline</span>
           </Link>
