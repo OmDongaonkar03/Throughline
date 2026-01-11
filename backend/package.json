@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node ./bin/www.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "@mastra/core": "^0.24.9",
     "@mastra/libsql": "^0.16.4",
     "@mastra/memory": "^0.15.13",
+    "@prisma/client": "5.22.0",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "cookie-parser": "~1.4.4",
@@ -19,7 +21,7 @@
     "express": "~4.16.1",
     "jsonwebtoken": "^9.0.3",
     "morgan": "~1.9.1",
-    "prisma": "^7.2.0",
+    "prisma": "5.22.0",
     "zod": "^3.25.76"
   }
 }
