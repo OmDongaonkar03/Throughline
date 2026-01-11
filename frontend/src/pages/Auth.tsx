@@ -22,8 +22,8 @@ const Auth = () => {
           className="w-full max-w-sm"
         >
           {/* Back button */}
-          <Link 
-            to="/" 
+          <Link
+            to="/"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -33,7 +33,9 @@ const Auth = () => {
           {/* Logo */}
           <div className="flex items-center gap-2 mb-8">
             <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-semibold text-sm">T</span>
+              <span className="text-primary-foreground font-semibold text-sm">
+                T
+              </span>
             </div>
             <span className="text-foreground font-medium">Throughline</span>
           </div>
@@ -44,8 +46,8 @@ const Auth = () => {
               {isLogin ? "Welcome back" : "Create your account"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {isLogin 
-                ? "Sign in to continue your journey" 
+              {isLogin
+                ? "Sign in to continue your journey"
                 : "Start tracking what you build"}
             </p>
           </div>
@@ -55,11 +57,6 @@ const Auth = () => {
             <Button variant="outline" className="w-full gap-2">
               <FaGoogle className="w-4 h-4" />
               Continue with Google
-            </Button>
-
-            <Button variant="outline" className="w-full gap-2">
-              <FaLinkedin className="w-4 h-4" />
-              Continue with LinkedIn
             </Button>
           </div>
 
@@ -151,8 +148,8 @@ const Auth = () => {
               Your work tells a story
             </h2>
             <p className="text-muted-foreground mb-8">
-              Daily check-ins become authentic social posts. Track what you build, 
-              let us remember, and generate content that sounds like you.
+              Daily check-ins become authentic social posts. Track what you
+              build, let us remember, and generate content that sounds like you.
             </p>
 
             <div className="space-y-4">
@@ -163,7 +160,9 @@ const Auth = () => {
               ].map((feature) => (
                 <div key={feature} className="flex items-center gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                  <span className="text-sm text-muted-foreground">{feature}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {feature}
+                  </span>
                 </div>
               ))}
             </div>
