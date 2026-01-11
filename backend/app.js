@@ -1,20 +1,28 @@
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import logger from 'morgan';
+import cors from 'cors';
+import dotenv from 'dotenv';
 
-var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
+dotenv.config();
 
-var app = express();
+const app = express();
+
+app.use(
+  cors({
+    origin: 'http://localhost:8080', // Adjust as needed for your frontend URL
+    credentials: true,
+  })
+);
 
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/', indexRouter);
-app.use('/users', usersRouter);
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 
-module.exports = app;
+export default app;
