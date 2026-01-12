@@ -11,7 +11,7 @@ export default function AuthCallback() {
     const error = searchParams.get("error");
 
     if (error) {
-      navigate("/login");
+      navigate("/auth");
       return;
     }
 
