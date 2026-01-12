@@ -5,6 +5,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 import authRoutes from "./routes/auth.js";
+import checkinRoutes from "./routes/checkin.js";
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ app.use(cookieParser());
 
 // routes
 app.use("/auth", authRoutes);
+app.use("/checkin", checkinRoutes);
 
 // health check
 app.get("/health", (req, res) => {
