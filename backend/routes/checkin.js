@@ -1,8 +1,11 @@
 import express from "express";
-import {createCheckIn, getCheckIns} from "../controllers/checkin.controller.js";
+import {createCheckIn, getCheckIns, getCheckInStats} from "../controllers/checkin.controller.js";
 import { authenticate } from "../middleware/auth.js";
 
 const router = express.Router();
+
+// GET /checkin/stats - Get check-in statistics
+router.get("/stats", authenticate, getCheckInStats);
 
 // POST /checkin - Create a new check-in
 router.post("/", authenticate, createCheckIn);
