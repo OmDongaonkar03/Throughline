@@ -94,7 +94,7 @@ export const AppSidebar = ({ className }: AppSidebarProps) => {
           >
             <div className="w-8 h-8 rounded-md flex items-center justify-center">
               <img
-                src="../../../public/logo-icon.png"
+                src="logo-icon.png"
                 alt="Logo"
                 className="w-full h-full object-contain"
               />

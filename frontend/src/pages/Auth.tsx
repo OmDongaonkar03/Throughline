@@ -100,7 +100,7 @@ const Auth = () => {
           <div className="flex items-center gap-2 mb-8">
             <div className="w-8 h-8 flex items-center justify-center">
               <img
-                src="../../public/logo-icon.png"
+                src="logo-icon.png"
                 alt="Logo"
                 className="w-full h-full object-contain"
                 loading="lazy"

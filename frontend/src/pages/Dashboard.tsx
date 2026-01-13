@@ -193,8 +193,8 @@ const Dashboard = () => {
                 <CardContent className="p-5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-md bg-secondary flex items-center justify-center">
-                        <Sparkles className="w-5 h-5 text-foreground" />
+                      <div className="w-10 h-10 rounded-md bg-primary flex items-center justify-center">
+                        <Sparkles className="w-5 h-5 text-primary-foreground" />
                       </div>
                       <div>
                         <h3 className="font-medium text-foreground">Generate Post</h3>
