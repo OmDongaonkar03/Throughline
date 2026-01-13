@@ -4,26 +4,123 @@ import {
   FileText, 
   TrendingUp,
   Sparkles,
-  Clock,
   ChevronRight
 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "../context/AuthContext";
+import { ActivityCalendar, DayDetailsModal } from "@/components/ui/ActivityCalendar";
 
-const recentActivity = [
-  { type: "check-in", text: "Deployed the authentication system", time: "2 hours ago" },
-  { type: "post", text: "Generated post about API design", time: "Yesterday" },
-  { type: "check-in", text: "Fixed production bugs", time: "2 days ago" },
-];
+interface CheckIn {
+  id: string;
+  content: string;
+  createdAt: string;
+}
 
-const stats = [
-  { label: "Check-ins this week", value: "7", icon: PenLine, trend: "+3" },
-  { label: "Posts generated", value: "12", icon: FileText, trend: "+5" },
-  { label: "Current streak", value: "14", icon: TrendingUp, suffix: "days" },
-];
+interface ActivityStats {
+  year: number;
+  accountCreationDate: string;
+  availableYears: number[];
+  dailyCounts: Record<string, number>;
+  totalCheckIns: number;
+  currentStreak: number;
+  startDate: string;
+  endDate: string;
+}
 
 const Dashboard = () => {
+  const [activityStats, setActivityStats] = useState<ActivityStats | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [selectedDateCheckIns, setSelectedDateCheckIns] = useState<CheckIn[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isLoadingModal, setIsLoadingModal] = useState(false);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const { toast } = useToast();
+  const { apiRequest } = useAuth();
+
+  const API_URL = import.meta.env.VITE_API_URL;
+
+  // Fetch activity stats
+  useEffect(() => {
+    fetchActivityStats(new Date().getFullYear());
+  }, []);
+
+  const fetchActivityStats = async (year: number) => {
+    try {
+      setIsLoadingStats(true);
+      const response = await apiRequest(`${API_URL}/checkin/stats?year=${year}`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch activity stats");
+      }
+
+      const data = await response.json();
+      setActivityStats(data);
+    } catch (error) {
+      console.error("Error fetching activity stats:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load activity data",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingStats(false);
+    }
+  };
+
+  const handleDayClick = async (date: string) => {
+    setSelectedDate(date);
+    setIsModalOpen(true);
+    setIsLoadingModal(true);
+
+    try {
+      const response = await apiRequest(`${API_URL}/checkin?date=${date}`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch check-ins");
+      }
+
+      const data = await response.json();
+      setSelectedDateCheckIns(data.checkIns || []);
+    } catch (error) {
+      console.error("Error fetching day check-ins:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load check-ins for this day",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingModal(false);
+    }
+  };
+
+  const handleYearChange = (year: number) => {
+    fetchActivityStats(year);
+  };
+
+  const stats = [
+    { 
+      label: "Total check-ins", 
+      value: activityStats?.totalCheckIns.toString() || "0", 
+      icon: PenLine 
+    },
+    { 
+      label: "Posts generated", 
+      value: "12", 
+      icon: FileText, 
+      trend: "+5" 
+    },
+    { 
+      label: "Current streak", 
+      value: activityStats?.currentStreak.toString() || "0", 
+      icon: TrendingUp, 
+      suffix: "days" 
+    },
+  ];
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 pt-16 lg:pt-8">
@@ -111,38 +208,39 @@ const Dashboard = () => {
             </Link>
           </div>
 
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-medium">Recent Activity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentActivity.map((activity, index) => (
-                  <div key={index} className="flex items-center gap-4">
-                    <div className={`w-8 h-8 rounded-md flex items-center justify-center ${
-                      activity.type === "check-in" 
-                        ? "bg-primary/10" 
-                        : "bg-secondary"
-                    }`}>
-                      {activity.type === "check-in" ? (
-                        <PenLine className="w-4 h-4 text-primary" />
-                      ) : (
-                        <FileText className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground truncate">{activity.text}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Clock className="w-3 h-3" />
-                      {activity.time}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          {/* Activity Calendar */}
+          {isLoadingStats ? (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">
+                Loading activity data...
+              </CardContent>
+            </Card>
+          ) : activityStats ? (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.3 }}
+            >
+              <ActivityCalendar
+                dailyCounts={activityStats.dailyCounts}
+                year={activityStats.year}
+                availableYears={activityStats.availableYears}
+                startDate={activityStats.startDate}
+                endDate={activityStats.endDate}
+                onYearChange={handleYearChange}
+                onDayClick={handleDayClick}
+              />
+            </motion.div>
+          ) : null}
+
+          {/* Day Details Modal */}
+          <DayDetailsModal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            date={selectedDate}
+            checkIns={selectedDateCheckIns}
+            isLoading={isLoadingModal}
+          />
         </motion.div>
       </div>
     </AppLayout>

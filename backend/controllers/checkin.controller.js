@@ -131,3 +131,103 @@ export const getCheckIns = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+export const getCheckInStats = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { year } = req.query;
+
+    // Get user's account creation date
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { createdAt: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const accountCreationDate = new Date(user.createdAt);
+    
+    // Determine the year to query
+    const targetYear = year ? parseInt(year) : new Date().getFullYear();
+    const currentYear = new Date().getFullYear();
+    const accountCreationYear = accountCreationDate.getFullYear();
+
+    // Validate year range
+    if (targetYear < accountCreationYear || targetYear > currentYear) {
+      return res.status(400).json({
+        message: "Invalid year. Must be between account creation year and current year",
+      });
+    }
+
+    // Set date range for the year
+    const startDate = new Date(targetYear, 0, 1); // Jan 1
+    const endDate = new Date(targetYear, 11, 31, 23, 59, 59, 999); // Dec 31
+
+    // If querying account creation year, start from creation date
+    if (targetYear === accountCreationYear) {
+      startDate.setTime(accountCreationDate.getTime());
+    }
+
+    // If querying current year, end at today
+    if (targetYear === currentYear) {
+      endDate.setTime(new Date().getTime());
+    }
+
+    // Fetch all check-ins for the year
+    const checkIns = await prisma.checkIn.findMany({
+      where: {
+        userId,
+        createdAt: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        createdAt: true,
+      },
+    });
+
+    // Group check-ins by date
+    const dailyCounts = {};
+    checkIns.forEach((checkIn) => {
+      const dateKey = checkIn.createdAt.toISOString().split("T")[0]; // YYYY-MM-DD
+      dailyCounts[dateKey] = (dailyCounts[dateKey] || 0) + 1;
+    });
+
+    // Calculate total and current streak
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let currentStreak = 0;
+    let checkDate = new Date(today);
+    
+    while (true) {
+      const dateKey = checkDate.toISOString().split("T")[0];
+      if (dailyCounts[dateKey]) {
+        currentStreak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+
+    res.json({
+      year: targetYear,
+      accountCreationDate: accountCreationDate.toISOString().split("T")[0],
+      availableYears: Array.from(
+        { length: currentYear - accountCreationYear + 1 },
+        (_, i) => accountCreationYear + i
+      ),
+      dailyCounts,
+      totalCheckIns: checkIns.length,
+      currentStreak,
+      startDate: startDate.toISOString().split("T")[0],
+      endDate: endDate.toISOString().split("T")[0],
+    });
+  } catch (error) {
+    console.error("Get check-in stats error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
