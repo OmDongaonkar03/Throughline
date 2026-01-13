@@ -11,14 +11,16 @@ model User {
   id            String         @id @default(cuid())
   email         String         @unique
   name          String
+  bio           String?
   password      String?
   googleId      String?        @unique
   profilePhoto  String?
   refreshTokens RefreshToken[]
+  notificationSettings NotificationSettings?
+  checkIns      CheckIn[]
   createdAt     DateTime
   updatedAt     DateTime
-  checkIns      CheckIn[]
-
+  
   @@index([email])
   @@index([googleId])
 }
@@ -45,4 +47,17 @@ model CheckIn {
   @@index([userId])
   @@index([createdAt])
   @@index([userId, createdAt])
+}
+
+model NotificationSettings {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailDigest   Boolean  @default(true)
+  postReminders Boolean  @default(true)
+  weeklyReport  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
 }

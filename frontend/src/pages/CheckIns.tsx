@@ -26,7 +26,7 @@ const CheckIns = () => {
   const { toast } = useToast();
   const { apiRequest } = useAuth();
 
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+  const API_URL = import.meta.env.VITE_API_URL;
 
   // Fetch today's check-ins
   useEffect(() => {

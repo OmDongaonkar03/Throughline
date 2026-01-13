@@ -2,13 +2,11 @@ import { motion } from "framer-motion";
 import { 
   User,
   Bell,
-  Palette,
-  Shield,
   CreditCard,
   ChevronRight,
   Check
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,13 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "../context/AuthContext";
 import { cn } from "@/lib/utils";
 
 const settingsSections = [
   { id: "profile", label: "Profile", icon: User, description: "Your personal information" },
   { id: "notifications", label: "Notifications", icon: Bell, description: "How we contact you" },
-  { id: "appearance", label: "Appearance", icon: Palette, description: "Customize your experience" },
-  { id: "security", label: "Security", icon: Shield, description: "Password and authentication" },
   { id: "billing", label: "Billing", icon: CreditCard, description: "Manage your subscription" },
 ];
 
@@ -33,6 +31,92 @@ const Settings = () => {
     postReminders: true,
     weeklyReport: false,
   });
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
+  const { toast } = useToast();
+  const { apiRequest } = useAuth();
+
+  const API_URL = import.meta.env.VITE_API_URL;
+
+  // Fetch notification settings on mount
+  useEffect(() => {
+    fetchNotificationSettings();
+  }, []);
+
+  const fetchNotificationSettings = async () => {
+    try {
+      const response = await apiRequest(`${API_URL}/notifications`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch notification settings");
+      }
+
+      const data = await response.json();
+      setNotifications({
+        emailDigest: data.settings.emailDigest,
+        postReminders: data.settings.postReminders,
+        weeklyReport: data.settings.weeklyReport,
+      });
+    } catch (error) {
+      console.error("Error fetching notification settings:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load notification settings",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleNotificationToggle = async (key: keyof typeof notifications, value: boolean) => {
+    // Optimistic update
+    const previousState = { ...notifications };
+    setNotifications(prev => ({
+      ...prev,
+      [key]: value
+    }));
+
+    try {
+      setIsLoadingNotifications(true);
+
+      const response = await apiRequest(`${API_URL}/notifications`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          [key]: value,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update notification settings");
+      }
+
+      const data = await response.json();
+      
+      // Update with server response to ensure consistency
+      setNotifications({
+        emailDigest: data.settings.emailDigest,
+        postReminders: data.settings.postReminders,
+        weeklyReport: data.settings.weeklyReport,
+      });
+
+      toast({
+        title: "Success",
+        description: "Notification preferences updated",
+      });
+    } catch (error) {
+      // Revert to previous state on error
+      setNotifications(previousState);
+      console.error("Error updating notification settings:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update notification settings",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  };
 
   return (
     <AppLayout>
@@ -141,10 +225,10 @@ const Settings = () => {
                           </div>
                           <Switch
                             checked={notifications[setting.id as keyof typeof notifications]}
-                            onCheckedChange={(checked) => setNotifications(prev => ({
-                              ...prev,
-                              [setting.id]: checked
-                            }))}
+                            onCheckedChange={(checked) => 
+                              handleNotificationToggle(setting.id as keyof typeof notifications, checked)
+                            }
+                            disabled={isLoadingNotifications}
                           />
                         </div>
                       ))}
@@ -194,26 +278,6 @@ const Settings = () => {
                         </div>
                       ))}
                     </div>
-                  </motion.div>
-                )}
-
-                {(activeSection === "appearance" || activeSection === "security") && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.2 }}
-                    className="flex flex-col items-center justify-center h-48 text-center"
-                  >
-                    <div className="w-12 h-12 rounded-md bg-secondary flex items-center justify-center mb-3">
-                      {activeSection === "appearance" ? (
-                        <Palette className="w-6 h-6 text-muted-foreground" />
-                      ) : (
-                        <Shield className="w-6 h-6 text-muted-foreground" />
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {activeSection === "appearance" ? "Appearance" : "Security"} settings coming soon
-                    </p>
                   </motion.div>
                 )}
               </CardContent>
