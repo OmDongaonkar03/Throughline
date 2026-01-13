@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 
 import authRoutes from "./routes/auth.js";
 import checkinRoutes from "./routes/checkin.js";
+import notificationRoutes from "./routes/notification.js";
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ app.use(cookieParser());
 // routes
 app.use("/auth", authRoutes);
 app.use("/checkin", checkinRoutes);
+app.use("/notifications", notificationRoutes);
 
 // health check
 app.get("/health", (req, res) => {
