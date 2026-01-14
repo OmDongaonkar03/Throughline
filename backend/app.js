@@ -8,6 +8,7 @@ import authRoutes from "./routes/auth.js";
 import checkinRoutes from "./routes/checkin.js";
 import notificationRoutes from "./routes/notification.js";
 import profileRoutes from "./routes/profile.js";
+import samplePostRoutes from "./routes/samplePost.js";
 
 dotenv.config();
 
@@ -31,6 +32,7 @@ app.use("/auth", authRoutes);
 app.use("/checkin", checkinRoutes);
 app.use("/notifications", notificationRoutes);
 app.use("/profile", profileRoutes);
+app.use("/sample", samplePostRoutes);
 
 // health check
 app.get("/health", (req, res) => {
