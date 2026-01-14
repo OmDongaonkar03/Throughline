@@ -1,11 +1,71 @@
 import prisma from "../db/prisma.js";
+import crypto from "crypto";
 import {
   generateAccessToken,
   generateRefreshToken,
+  generateVerificationToken,
   verifyRefreshToken,
   hashPassword,
   comparePassword,
 } from "../utils/jwt.js";
+import { sendMail } from "../utils/mail.js";
+import { verificationEmailTemplate } from "../templates/verificationEmail.js";
+
+// Helper function to send verification email
+const sendVerificationEmail = async (user) => {
+  const verificationToken = generateVerificationToken(user.id, user.email);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+  
+  // Create hash of token for storage
+  const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+
+  // Check rate limit - max 3 verification emails per day
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const tokensSentToday = await prisma.verificationToken.count({
+    where: {
+      userId: user.id,
+      createdAt: {
+        gte: startOfDay,
+      },
+    },
+  });
+
+  if (tokensSentToday >= 3) {
+    throw new Error("Maximum verification emails sent for today. Please try again tomorrow.");
+  }
+
+  // Store verification token in database with hash
+  await prisma.verificationToken.create({
+    data: {
+      token: verificationToken,
+      tokenHash: tokenHash,
+      userId: user.id,
+      email: user.email,
+      expiresAt,
+      createdAt: new Date(),
+    },
+  });
+
+  // Generate verification link
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  const verificationLink = `${frontendUrl}/verify-email?token=${verificationToken}`;
+
+  // Get email template
+  const emailContent = verificationEmailTemplate({
+    name: user.name,
+    verificationLink,
+  });
+
+  // Send email
+  await sendMail({
+    to: user.email,
+    subject: emailContent.subject,
+    html: emailContent.html,
+    text: emailContent.text,
+  });
+};
 
 // Signup controller
 export const signup = async (req, res) => {
@@ -29,11 +89,20 @@ export const signup = async (req, res) => {
         name,
         email,
         password: hashedPassword,
+        verified: false, // Start as unverified
         createdAt: now,
         updatedAt: now,
       },
-      select: { id: true, email: true, name: true, profilePhoto: true, createdAt: true },
+      select: { id: true, email: true, name: true, profilePhoto: true, verified: true, createdAt: true },
     });
+
+    // Send verification email
+    try {
+      await sendVerificationEmail(user);
+    } catch (emailError) {
+      console.error("Failed to send verification email:", emailError);
+      // Continue with signup even if email fails
+    }
 
     const accessToken = generateAccessToken(user.id);
     const refreshToken = generateRefreshToken(user.id);
@@ -55,9 +124,10 @@ export const signup = async (req, res) => {
     });
 
     res.status(201).json({
-      message: "User created successfully",
+      message: "User created successfully. Please check your email to verify your account.",
       token: accessToken,
       user,
+      verificationSent: true,
     });
   } catch (error) {
     console.error("Signup error:", error);
@@ -84,6 +154,29 @@ export const login = async (req, res) => {
     const isValidPassword = await comparePassword(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // If user is not verified, send verification email
+    if (!user.verified) {
+      try {
+        await sendVerificationEmail(user);
+        return res.status(403).json({ 
+          message: "Email not verified. A new verification link has been sent to your email.",
+          verified: false,
+          verificationSent: true,
+        });
+      } catch (emailError) {
+        if (emailError.message.includes("Maximum verification emails")) {
+          return res.status(429).json({ 
+            message: emailError.message,
+            verified: false,
+          });
+        }
+        return res.status(403).json({ 
+          message: "Email not verified. Please contact support.",
+          verified: false,
+        });
+      }
     }
 
     const accessToken = generateAccessToken(user.id);
@@ -113,6 +206,7 @@ export const login = async (req, res) => {
         email: user.email,
         name: user.name,
         profilePhoto: user.profilePhoto,
+        verified: user.verified,
         createdAt: user.createdAt,
       },
     });
@@ -186,6 +280,7 @@ export const googleCallback = async (req, res) => {
         data: {
           googleId: googleId,
           profilePhoto: picture,
+          verified: true, // Google OAuth users are auto-verified
           updatedAt: now,
         },
         select: { 
@@ -193,6 +288,7 @@ export const googleCallback = async (req, res) => {
           email: true, 
           name: true, 
           profilePhoto: true, 
+          verified: true,
           createdAt: true 
         },
       });
@@ -204,6 +300,7 @@ export const googleCallback = async (req, res) => {
           name,
           googleId,
           profilePhoto: picture,
+          verified: true, // Google OAuth users are auto-verified
           createdAt: now,
           updatedAt: now,
         },
@@ -211,7 +308,8 @@ export const googleCallback = async (req, res) => {
           id: true, 
           email: true, 
           name: true, 
-          profilePhoto: true, 
+          profilePhoto: true,
+          verified: true, 
           createdAt: true 
         },
       });
@@ -275,6 +373,14 @@ export const refresh = async (req, res) => {
       return res.status(401).json({ message: "Refresh token expired" });
     }
 
+    // Check if user is verified
+    if (!storedToken.user.verified) {
+      return res.status(403).json({ 
+        message: "Email not verified. Please check your email for verification link.",
+        verified: false
+      });
+    }
+
     const newAccessToken = generateAccessToken(storedToken.userId);
 
     res.json({
@@ -284,6 +390,7 @@ export const refresh = async (req, res) => {
         email: storedToken.user.email,
         name: storedToken.user.name,
         profilePhoto: storedToken.user.profilePhoto,
+        verified: storedToken.user.verified,
         createdAt: storedToken.user.createdAt,
       },
     });
@@ -316,6 +423,14 @@ export const me = async (req, res) => {
       return res.status(401).json({ message: "Session expired" });
     }
 
+    // Check if user is verified
+    if (!storedToken.user.verified) {
+      return res.status(403).json({ 
+        message: "Email not verified. Please check your email for verification link.",
+        verified: false
+      });
+    }
+
     const newAccessToken = generateAccessToken(storedToken.userId);
 
     res.json({
@@ -325,6 +440,7 @@ export const me = async (req, res) => {
         email: storedToken.user.email,
         name: storedToken.user.name,
         profilePhoto: storedToken.user.profilePhoto,
+        verified: storedToken.user.verified,
         createdAt: storedToken.user.createdAt,
       },
     });

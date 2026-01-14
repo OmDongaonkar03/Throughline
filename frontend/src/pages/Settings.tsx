@@ -17,6 +17,9 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "../context/AuthContext";
 import { cn } from "@/lib/utils";
+import { notificationService } from "@/services/notificationService";
+import { profileService } from "@/services/profileService";
+import { useNavigate } from "react-router-dom";
 
 const settingsSections = [
   { id: "profile", label: "Profile", icon: User, description: "Your personal information" },
@@ -31,11 +34,37 @@ const Settings = () => {
     postReminders: true,
     weeklyReport: false,
   });
+  const [profileData, setProfileData] = useState({
+    name: "",
+    email: "",
+    bio: "",
+  });
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const { toast } = useToast();
-  const { apiRequest } = useAuth();
+  const { apiRequest, user, logout } = useAuth();
+  const navigate = useNavigate();
 
-  const API_URL = import.meta.env.VITE_API_URL;
+  // Initialize profile data from user context
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        name: user.name || "",
+        email: user.email || "",
+        bio: user.bio || "",
+      });
+      
+      // Check if user is verified
+      if (user.verified === false) {
+        toast({
+          title: "Email Not Verified",
+          description: "Please verify your email to access all features",
+          variant: "destructive",
+        });
+        navigate("/auth");
+      }
+    }
+  }, [user, navigate, toast]);
 
   // Fetch notification settings on mount
   useEffect(() => {
@@ -44,29 +73,30 @@ const Settings = () => {
 
   const fetchNotificationSettings = async () => {
     try {
-      const response = await apiRequest(`${API_URL}/notifications`);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch notification settings");
-      }
-
-      const data = await response.json();
+      const settings = await notificationService.getSettings(apiRequest);
       setNotifications({
-        emailDigest: data.settings.emailDigest,
-        postReminders: data.settings.postReminders,
-        weeklyReport: data.settings.weeklyReport,
+        emailDigest: settings.emailDigest,
+        postReminders: settings.postReminders,
+        weeklyReport: settings.weeklyReport,
       });
     } catch (error) {
       console.error("Error fetching notification settings:", error);
+      
+      // Check if verification is needed
+      if (error.message.includes("verify") || error.message.includes("Verification")) {
+        navigate("/auth");
+        return;
+      }
+      
       toast({
         title: "Error",
-        description: "Failed to load notification settings",
+        description: error.message || "Failed to load notification settings",
         variant: "destructive",
       });
     }
   };
 
-  const handleNotificationToggle = async (key: keyof typeof notifications, value: boolean) => {
+  const handleNotificationToggle = async (key, value) => {
     // Optimistic update
     const previousState = { ...notifications };
     setNotifications(prev => ({
@@ -77,27 +107,15 @@ const Settings = () => {
     try {
       setIsLoadingNotifications(true);
 
-      const response = await apiRequest(`${API_URL}/notifications`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          [key]: value,
-        }),
+      const updatedSettings = await notificationService.updateSettings(apiRequest, {
+        [key]: value,
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to update notification settings");
-      }
-
-      const data = await response.json();
-      
       // Update with server response to ensure consistency
       setNotifications({
-        emailDigest: data.settings.emailDigest,
-        postReminders: data.settings.postReminders,
-        weeklyReport: data.settings.weeklyReport,
+        emailDigest: updatedSettings.emailDigest,
+        postReminders: updatedSettings.postReminders,
+        weeklyReport: updatedSettings.weeklyReport,
       });
 
       toast({
@@ -108,13 +126,64 @@ const Settings = () => {
       // Revert to previous state on error
       setNotifications(previousState);
       console.error("Error updating notification settings:", error);
+      
+      // Check if verification is needed
+      if (error.message.includes("verify") || error.message.includes("Verification")) {
+        navigate("/auth");
+        return;
+      }
+      
       toast({
         title: "Error",
-        description: "Failed to update notification settings",
+        description: error.message || "Failed to update notification settings",
         variant: "destructive",
       });
     } finally {
       setIsLoadingNotifications(false);
+    }
+  };
+
+  const handleProfileChange = (e) => {
+    setProfileData(prev => ({
+      ...prev,
+      [e.target.id]: e.target.value
+    }));
+  };
+
+  const handleProfileSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoadingProfile(true);
+
+    try {
+      const result = await profileService.updateProfile(apiRequest, profileData);
+
+      toast({
+        title: "Success",
+        description: result.message || "Profile updated successfully",
+      });
+
+      // If email was changed, user will be logged out
+      if (result.emailChanged && result.loggedOut) {
+        toast({
+          title: "Email Changed",
+          description: "Please check your email to verify your new address. Logging out...",
+        });
+        
+        // Wait a moment for user to see the message, then logout
+        setTimeout(() => {
+          logout();
+          navigate("/auth");
+        }, 2000);
+      }
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingProfile(false);
     }
   };
 
@@ -174,27 +243,64 @@ const Settings = () => {
                     
                     <div className="flex items-center gap-4">
                       <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center">
-                        <span className="text-primary-foreground font-medium text-xl">J</span>
+                        {user?.profilePhoto ? (
+                          <img 
+                            src={user.profilePhoto} 
+                            alt={user.name} 
+                            className="w-full h-full rounded-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <span className="text-primary-foreground font-medium text-xl">
+                            {user?.name?.charAt(0).toUpperCase() || "U"}
+                          </span>
+                        )}
                       </div>
-                      <Button variant="outline" size="sm">Change avatar</Button>
+                      {user?.profilePhoto && (
+                        <p className="text-xs text-muted-foreground">
+                          Profile photo from Google account
+                        </p>
+                      )}
                     </div>
 
-                    <div className="grid gap-4">
+                    <form onSubmit={handleProfileSubmit} className="grid gap-4">
                       <div className="grid gap-2">
                         <Label htmlFor="name">Full name</Label>
-                        <Input id="name" defaultValue="Jane Smith" />
+                        <Input 
+                          id="name" 
+                          value={profileData.name}
+                          onChange={handleProfileChange}
+                          disabled={isLoadingProfile}
+                        />
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="email">Email</Label>
-                        <Input id="email" type="email" defaultValue="jane@example.com" />
+                        <Input 
+                          id="email" 
+                          type="email" 
+                          value={profileData.email}
+                          onChange={handleProfileChange}
+                          disabled={isLoadingProfile}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Changing your email will require verification and log you out
+                        </p>
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="bio">Bio</Label>
-                        <Textarea id="bio" defaultValue="Building products and learning in public." />
+                        <Textarea 
+                          id="bio" 
+                          value={profileData.bio}
+                          onChange={handleProfileChange}
+                          disabled={isLoadingProfile}
+                          placeholder="Tell us about yourself..."
+                        />
                       </div>
-                    </div>
 
-                    <Button>Save changes</Button>
+                      <Button type="submit" disabled={isLoadingProfile}>
+                        {isLoadingProfile ? "Saving..." : "Save changes"}
+                      </Button>
+                    </form>
                   </motion.div>
                 )}
 
@@ -224,9 +330,9 @@ const Settings = () => {
                             <p className="text-xs text-muted-foreground">{setting.description}</p>
                           </div>
                           <Switch
-                            checked={notifications[setting.id as keyof typeof notifications]}
+                            checked={notifications[setting.id]}
                             onCheckedChange={(checked) => 
-                              handleNotificationToggle(setting.id as keyof typeof notifications, checked)
+                              handleNotificationToggle(setting.id, checked)
                             }
                             disabled={isLoadingNotifications}
                           />

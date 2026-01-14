@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import authRoutes from "./routes/auth.js";
 import checkinRoutes from "./routes/checkin.js";
 import notificationRoutes from "./routes/notification.js";
+import profileRoutes from "./routes/profile.js";
 
 dotenv.config();
 
@@ -15,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(
   cors({
-    origin: ["http://localhost:8080", "http://192.168.5.119:8080"], // your frontend URL
+    origin: ["http://localhost:8080"], // your frontend URL
     credentials: true,
   })
 );
@@ -29,6 +30,7 @@ app.use(cookieParser());
 app.use("/auth", authRoutes);
 app.use("/checkin", checkinRoutes);
 app.use("/notifications", notificationRoutes);
+app.use("/profile", profileRoutes);
 
 // health check
 app.get("/health", (req, res) => {

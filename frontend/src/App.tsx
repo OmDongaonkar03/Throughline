@@ -10,7 +10,9 @@ import Dashboard from "./pages/Dashboard";
 import CheckIns from "./pages/CheckIns";
 import Posts from "./pages/Posts";
 import Settings from "./pages/Settings";
+import VerifyEmail from "./pages/VerifyMail";
 import NotFound from "./pages/NotFound";
+
 
 import AuthCallback from './components/AuthCallback';
 
@@ -64,7 +66,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-
+            <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
