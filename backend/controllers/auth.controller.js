@@ -439,6 +439,7 @@ export const me = async (req, res) => {
         id: storedToken.user.id,
         email: storedToken.user.email,
         name: storedToken.user.name,
+        bio: storedToken.user.bio,
         profilePhoto: storedToken.user.profilePhoto,
         verified: storedToken.user.verified,
         createdAt: storedToken.user.createdAt,

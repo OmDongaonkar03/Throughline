@@ -20,6 +20,7 @@ model User {
   notificationSettings NotificationSettings?
   verificationTokens VerificationToken[]
   checkIns      CheckIn[]
+  samplePosts   SamplePost[]
   createdAt     DateTime
   updatedAt     DateTime
   
@@ -78,4 +79,16 @@ model NotificationSettings {
   updatedAt     DateTime @updatedAt
 
   @@index([userId])
+}
+
+model SamplePost {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([createdAt])
 }
