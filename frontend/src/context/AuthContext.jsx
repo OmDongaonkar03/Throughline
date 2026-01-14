@@ -51,6 +51,11 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
 
       if (!response.ok) {
+        // If not verified, logout user
+        if (data.verified === false) {
+          logout();
+          return { success: false, error: data.message, needsVerification: true };
+        }
         throw new Error(data.message || 'Token refresh failed');
       }
 
@@ -122,9 +127,16 @@ export const AuthProvider = ({ children }) => {
             setUser(data.user);
           }
         } else {
-          // no valid session, they're logged out
-          setUser(null);
-          setAccessToken(null);
+          const data = await response.json();
+          // If not verified, clear state
+          if (data.verified === false) {
+            setUser(null);
+            setAccessToken(null);
+          } else {
+            // no valid session, they're logged out
+            setUser(null);
+            setAccessToken(null);
+          }
         }
       } catch (error) {
         console.error('Error checking auth:', error);
@@ -172,7 +184,11 @@ export const AuthProvider = ({ children }) => {
         setUser(data.user);
       }
 
-      return { success: true, data };
+      return { 
+        success: true, 
+        data,
+        verificationSent: data.verificationSent 
+      };
     } catch (error) {
       console.error('Signup error:', error);
       return { success: false, error: error.message };
@@ -193,6 +209,15 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
 
       if (!response.ok) {
+        // Special handling for unverified users
+        if (data.verified === false) {
+          return { 
+            success: false, 
+            error: data.message,
+            needsVerification: true,
+            verificationSent: data.verificationSent
+          };
+        }
         throw new Error(data.message || 'Login failed');
       }
 
@@ -265,7 +290,25 @@ export const AuthProvider = ({ children }) => {
         return apiRequest(url, options);
       } else {
         // refresh failed, user needs to login again
+        if (refreshResult.needsVerification) {
+          // Component should handle this by checking response
+          return response;
+        }
         return response;
+      }
+    }
+
+    // If we get 403 with verification error, logout
+    if (response.status === 403) {
+      try {
+        const data = await response.clone().json();
+        if (data.verified === false) {
+          logout();
+          // Return response with special flag for component to handle navigation
+          response.needsVerification = true;
+        }
+      } catch (e) {
+        // If can't parse JSON, just return response
       }
     }
 

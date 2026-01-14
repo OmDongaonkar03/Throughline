@@ -15,8 +15,10 @@ model User {
   password      String?
   googleId      String?        @unique
   profilePhoto  String?
+  verified      Boolean        @default(false)
   refreshTokens RefreshToken[]
   notificationSettings NotificationSettings?
+  verificationTokens VerificationToken[]
   checkIns      CheckIn[]
   createdAt     DateTime
   updatedAt     DateTime
@@ -35,6 +37,22 @@ model RefreshToken {
 
   @@index([userId])
   @@index([token])
+}
+
+model VerificationToken {
+  id        String   @id @default(cuid())
+  token     String   @db.Text
+  tokenHash String   @unique // SHA256 hash of token for fast lookups
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String   // The email being verified
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([email])
+  @@index([tokenHash])
 }
 
 model CheckIn {

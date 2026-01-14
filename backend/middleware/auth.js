@@ -24,6 +24,7 @@ export const authenticate = async (req, res, next) => {
         id: true,
         email: true,
         name: true,
+        verified: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -31,6 +32,14 @@ export const authenticate = async (req, res, next) => {
 
     if (!user) {
       return res.status(401).json({ message: "User not found" });
+    }
+
+    // Check if user is verified
+    if (!user.verified) {
+      return res.status(403).json({ 
+        message: "Email not verified. Please check your email for verification link.",
+        verified: false
+      });
     }
 
     req.user = user;

@@ -4,6 +4,8 @@ import bcrypt from "bcrypt";
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 const JWT_REFRESH_SECRET =
   process.env.JWT_REFRESH_SECRET || "your-refresh-secret-key";
+const JWT_VERIFICATION_SECRET =
+  process.env.JWT_VERIFICATION_SECRET || "your-verification-secret-key";
 
 // generate access token (short-lived: 15min)
 export const generateAccessToken = (userId) => {
@@ -13,6 +15,13 @@ export const generateAccessToken = (userId) => {
 // generate refresh token (long-lived: 7 days)
 export const generateRefreshToken = (userId) => {
   return jwt.sign({ userId }, JWT_REFRESH_SECRET, { expiresIn: "7d" });
+};
+
+// generate verification token (short-lived: 15min)
+export const generateVerificationToken = (userId, email) => {
+  return jwt.sign({ userId, email, type: "verification" }, JWT_VERIFICATION_SECRET, { 
+    expiresIn: "15m" 
+  });
 };
 
 // verify access token
@@ -28,6 +37,15 @@ export const verifyAccessToken = (token) => {
 export const verifyRefreshToken = (token) => {
   try {
     return jwt.verify(token, JWT_REFRESH_SECRET);
+  } catch (error) {
+    return null;
+  }
+};
+
+// verify verification token
+export const verifyVerificationToken = (token) => {
+  try {
+    return jwt.verify(token, JWT_VERIFICATION_SECRET);
   } catch (error) {
     return null;
   }

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ArrowLeft, Mail, Lock, User } from "lucide-react";
+import { ArrowLeft, Mail, Lock, User, AlertCircle } from "lucide-react";
 import { FaGoogle } from "react-icons/fa";
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -18,6 +19,7 @@ const Auth = () => {
     password: "",
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [verificationAlert, setVerificationAlert] = useState(null);
 
   const { signup, login } = useAuth();
   const navigate = useNavigate();
@@ -32,11 +34,14 @@ const Auth = () => {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.id]: e.target.value });
+    // Clear verification alert when user starts typing
+    setVerificationAlert(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
+    setVerificationAlert(null);
 
     try {
       let result;
@@ -47,17 +52,39 @@ const Auth = () => {
       }
 
       if (result.success) {
-        toast({
-          title: isLogin ? "Welcome back!" : "Account created!",
-          description: isLogin 
-            ? "You've successfully signed in." 
-            : "Your account has been created successfully.",
-        });
-        navigate("/dashboard");
+        // Show verification message for signup
+        if (!isLogin && result.verificationSent) {
+          toast({
+            title: "Account created!",
+            description: "Please check your email to verify your account before logging in.",
+          });
+          setVerificationAlert({
+            type: "success",
+            message: "Account created! Please check your email to verify your account."
+          });
+        } else {
+          toast({
+            title: isLogin ? "Welcome back!" : "Account created!",
+            description: isLogin 
+              ? "You've successfully signed in." 
+              : "Your account has been created successfully.",
+          });
+          navigate("/dashboard");
+        }
       } else {
+        // Handle verification needed error
+        if (result.needsVerification) {
+          setVerificationAlert({
+            type: "warning",
+            message: result.verificationSent 
+              ? "Email not verified. A new verification link has been sent to your email."
+              : result.error
+          });
+        }
+        
         toast({
-          variant: "destructive",
-          title: "Error",
+          variant: result.needsVerification ? "default" : "destructive",
+          title: result.needsVerification ? "Verification Required" : "Error",
           description: result.error || "Authentication failed. Please try again.",
         });
       }
@@ -75,6 +102,7 @@ const Auth = () => {
   const handleToggleMode = () => {
     setIsLogin(!isLogin);
     setFormData({ name: "", email: "", password: "" });
+    setVerificationAlert(null);
   };
 
   return (
@@ -120,6 +148,16 @@ const Auth = () => {
                 : "Start tracking what you build"}
             </p>
           </div>
+
+          {/* Verification Alert */}
+          {verificationAlert && (
+            <Alert className="mb-6" variant={verificationAlert.type === "warning" ? "default" : "default"}>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                {verificationAlert.message}
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* Social login buttons */}
           <div className="space-y-3 mb-6">
