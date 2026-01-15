@@ -8,21 +8,25 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  name          String
-  bio           String?
-  password      String?
-  googleId      String?        @unique
-  profilePhoto  String?
-  verified      Boolean        @default(false)
-  refreshTokens RefreshToken[]
+  id                   String                @id @default(cuid())
+  email                String                @unique
+  name                 String
+  bio                  String?
+  password             String?
+  googleId             String?               @unique
+  profilePhoto         String?
+  verified             Boolean               @default(false)
+  refreshTokens        RefreshToken[]
   notificationSettings NotificationSettings?
-  verificationTokens VerificationToken[]
-  checkIns      CheckIn[]
-  samplePosts   SamplePost[]
-  createdAt     DateTime
-  updatedAt     DateTime
+  verificationTokens   VerificationToken[]
+  checkIns             CheckIn[]
+  samplePosts          SamplePost[]
+  generatedPosts       GeneratedPost[]
+  toneProfile          ToneProfile?
+  generationSchedule   GenerationSchedule?
+  generationJobs       GenerationJob[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
   
   @@index([email])
   @@index([googleId])
@@ -34,7 +38,7 @@ model RefreshToken {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
-  createdAt DateTime
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([token])
@@ -43,10 +47,10 @@ model RefreshToken {
 model VerificationToken {
   id        String   @id @default(cuid())
   token     String   @db.Text
-  tokenHash String   @unique // SHA256 hash of token for fast lookups
+  tokenHash String   @unique
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  email     String   // The email being verified
+  email     String
   used      Boolean  @default(false)
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -61,7 +65,7 @@ model CheckIn {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   content   String   @db.Text
-  createdAt DateTime
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([createdAt])
@@ -91,4 +95,118 @@ model SamplePost {
 
   @@index([userId])
   @@index([createdAt])
+}
+
+model GeneratedPost {
+  id             String          @id @default(cuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type           PostType
+  date           DateTime        // The date this post represents
+  
+  content        String          @db.Text // Main narrative
+  metadata       Json?           // Structured insights
+  
+  toneProfileId  String?
+  toneProfile    ToneProfile?    @relation(fields: [toneProfileId], references: [id])
+  
+  version        Int             @default(1)
+  isLatest       Boolean         @default(true)
+  generationType GenerationType  @default(AUTO)
+  
+  modelUsed      String?         // e.g., "openai/gpt-4o-mini"
+  tokensUsed     Int?
+  
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  
+  @@index([userId, date, type])
+  @@index([userId, type, isLatest])
+  @@index([date])
+}
+
+enum PostType {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum GenerationType {
+  AUTO
+  MANUAL
+}
+
+model ToneProfile {
+  id             String          @id @default(cuid())
+  userId         String          @unique
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  voice          String          @db.Text
+  sentenceStyle  String          @db.Text
+  emotionalRange String          @db.Text
+  commonPhrases  Json?
+  exampleText    String          @db.Text
+  
+  fullProfile    Json
+  
+  extractedAt    DateTime        @default(now())
+  modelUsed      String
+  
+  posts          GeneratedPost[]
+  
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  
+  @@index([userId])
+}
+
+model GenerationSchedule {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  dailyEnabled   Boolean  @default(true)
+  dailyTime      String   @default("21:00")
+  
+  weeklyEnabled  Boolean  @default(true)
+  weeklyDay      Int      @default(0)
+  weeklyTime     String   @default("20:00")
+  
+  monthlyEnabled Boolean  @default(true)
+  monthlyDay     Int      @default(28)
+  monthlyTime    String   @default("20:00")
+  
+  timezone       String   @default("Asia/Kolkata")
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@index([userId])
+}
+
+model GenerationJob {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type        PostType
+  date        DateTime
+  
+  status      JobStatus @default(PENDING)
+  error       String?   @db.Text
+  
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  
+  @@index([userId, status])
+  @@index([status, createdAt])
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
 }
