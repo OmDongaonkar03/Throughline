@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -50,7 +50,11 @@
     --sidebar-border: 0 0% 14%;
     --sidebar-ring: 142 71% 45%;
   }
-
+  ::selection {
+    color: #21C45D;
+    background: #0A1B10;
+    text-shadow: none;
+  }
   .dark {
     --background: 0 0% 2%;
     --foreground: 0 0% 98%;
@@ -102,7 +106,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
   }
 }
 

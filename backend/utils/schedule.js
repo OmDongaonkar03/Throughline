@@ -31,3 +31,48 @@ export async function createDefaultSchedule(userId) {
     return null;
   }
 }
+
+// Helper function to create default platform settings
+export async function createDefaultPlatformSettings(userId) {
+  try {
+    await prisma.userPlatformSettings.create({
+      data: {
+        userId,
+        xEnabled: false,
+        linkedinEnabled: true,
+        redditEnabled: false,
+      },
+    });
+    console.log(
+      `[PlatformSettings] Created default settings for user ${userId}`
+    );
+  } catch (error) {
+    console.error(
+      `[PlatformSettings] Failed to create default settings for user ${userId}:`,
+      error
+    );
+  }
+}
+
+// Helper function to create default notification settings
+export async function createDefaultNotificationSettings(userId) {
+  try {
+    await prisma.notificationSettings.create({
+      data: {
+        userId,
+        emailDigest: false,
+        postReminders: true,
+        weeklyReport: false,
+      },  
+    });
+
+    console.log(
+      `[NotificationSettings] Created default notification settings for user ${userId}`
+    );
+  } catch (error) {
+    console.error(
+      `[NotificationSettings] Failed to create default notification settings for user ${userId}:`,
+      error
+    );
+  }
+}

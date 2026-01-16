@@ -87,8 +87,7 @@ export function getLLMConfig() {
 
   // No provider found
   throw new Error(
-    "No LLM provider configured. Please set one of: " +
-      "GROQ_API_KEY, OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in your .env file"
+    "No LLM provider configured"
   );
 }
 

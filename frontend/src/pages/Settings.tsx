@@ -4,7 +4,8 @@ import {
   Bell,
   CreditCard,
   ChevronRight,
-  Check
+  Check,
+  Share2
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -19,12 +20,32 @@ import { useAuth } from "../context/AuthContext";
 import { cn } from "@/lib/utils";
 import { notificationService } from "@/services/notificationService";
 import { profileService } from "@/services/profileService";
+import { platformService } from "@/services/platformService";
 import { useNavigate } from "react-router-dom";
 
 const settingsSections = [
   { id: "profile", label: "Profile", icon: User, description: "Your personal information" },
+  { id: "platforms", label: "Platforms", icon: Share2, description: "Selected social platforms" },
   { id: "notifications", label: "Notifications", icon: Bell, description: "How we contact you" },
   { id: "billing", label: "Billing", icon: CreditCard, description: "Manage your subscription" },
+];
+
+const platformsConfig = [
+  { 
+    id: "linkedinEnabled", 
+    label: "LinkedIn", 
+    logo: "platforms/linkedin.png",
+  },
+  { 
+    id: "xEnabled", 
+    label: "X (Twitter)", 
+    logo: "platforms/twitter.png",
+  },
+  { 
+    id: "redditEnabled", 
+    label: "Reddit", 
+    logo: "platforms/reddit.png",
+  },
 ];
 
 const Settings = () => {
@@ -34,12 +55,18 @@ const Settings = () => {
     postReminders: true,
     weeklyReport: false,
   });
+  const [platforms, setPlatforms] = useState({
+    xEnabled: false,
+    linkedinEnabled: true,
+    redditEnabled: false,
+  });
   const [profileData, setProfileData] = useState({
     name: "",
     email: "",
     bio: "",
   });
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
+  const [isLoadingPlatforms, setIsLoadingPlatforms] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const { toast } = useToast();
   const { apiRequest, user, logout } = useAuth();
@@ -71,6 +98,11 @@ const Settings = () => {
     fetchNotificationSettings();
   }, []);
 
+  // Fetch platform settings on mount
+  useEffect(() => {
+    fetchPlatformSettings();
+  }, []);
+
   const fetchNotificationSettings = async () => {
     try {
       const settings = await notificationService.getSettings(apiRequest);
@@ -91,6 +123,31 @@ const Settings = () => {
       toast({
         title: "Error",
         description: error.message || "Failed to load notification settings",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const fetchPlatformSettings = async () => {
+    try {
+      const settings = await platformService.getSettings(apiRequest);
+      setPlatforms({
+        xEnabled: settings.xEnabled,
+        linkedinEnabled: settings.linkedinEnabled,
+        redditEnabled: settings.redditEnabled,
+      });
+    } catch (error) {
+      console.error("Error fetching platform settings:", error);
+      
+      // Check if verification is needed
+      if (error.message.includes("verify") || error.message.includes("Verification")) {
+        navigate("/auth");
+        return;
+      }
+      
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load platform settings",
         variant: "destructive",
       });
     }
@@ -140,6 +197,74 @@ const Settings = () => {
       });
     } finally {
       setIsLoadingNotifications(false);
+    }
+  };
+
+  const handlePlatformToggle = async (key, value) => {
+    // Check if disabling would leave no platforms enabled
+    if (!value) {
+      // Only check when disabling (value = false)
+      const updatedPlatforms = {
+        ...platforms,
+        [key]: value
+      };
+      
+      const enabledCount = Object.values(updatedPlatforms).filter(Boolean).length;
+      
+      if (enabledCount === 0) {
+        toast({
+          title: "Cannot disable all platforms",
+          description: "At least one platform must be enabled",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    // Optimistic update
+    const previousState = { ...platforms };
+    const updatedPlatforms = {
+      ...platforms,
+      [key]: value
+    };
+    setPlatforms(updatedPlatforms);
+
+    try {
+      setIsLoadingPlatforms(true);
+
+      const updatedSettings = await platformService.updateSettings(apiRequest, {
+        [key]: value,
+      });
+
+      // Update with server response to ensure consistency
+      setPlatforms({
+        xEnabled: updatedSettings.xEnabled,
+        linkedinEnabled: updatedSettings.linkedinEnabled,
+        redditEnabled: updatedSettings.redditEnabled,
+      });
+
+      toast({
+        title: "Success",
+        description: "Platform settings updated",
+      });
+    } catch (error) {
+      // Revert to previous state on error
+      setPlatforms(previousState);
+      console.error("Error updating platform settings:", error);
+      
+      // Check if verification is needed
+      if (error.message.includes("verify") || error.message.includes("Verification")) {
+        navigate("/auth");
+        return;
+      }
+      
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update platform settings",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingPlatforms(false);
     }
   };
 
@@ -301,6 +426,46 @@ const Settings = () => {
                         {isLoadingProfile ? "Saving..." : "Save changes"}
                       </Button>
                     </form>
+                  </motion.div>
+                )}
+
+                {activeSection === "platforms" && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2 }}
+                    className="space-y-6"
+                  >
+                    <CardHeader className="p-0">
+                      <CardTitle className="text-base">Platform Settings</CardTitle>
+                    </CardHeader>
+                    
+                    <div className="space-y-4">
+                      {platformsConfig.map((platform) => (
+                        <div 
+                          key={platform.id}
+                          className="flex items-center justify-between p-4 rounded-md bg-secondary/50"
+                        >
+                          <div className="flex items-center gap-3">
+                            <img 
+                              src={platform.logo} 
+                              alt={platform.label}
+                              className="w-8 h-8 object-contain rounded-md bg-white p-1"
+                            />
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{platform.label}</p>
+                            </div>
+                          </div>
+                          <Switch
+                            checked={platforms[platform.id]}
+                            onCheckedChange={(checked) => 
+                              handlePlatformToggle(platform.id, checked)
+                            }
+                            disabled={isLoadingPlatforms}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </motion.div>
                 )}
 
