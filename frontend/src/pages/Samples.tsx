@@ -5,8 +5,8 @@ import {
   Edit2,
   Save,
   X,
-  Sparkles,
-  Info
+  Info,
+  Layers
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -176,7 +176,7 @@ const TuneSamples = () => {
           {/* Header */}
           <div className="mb-8">
             <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="w-6 h-6 text-primary" />
+              <Layers className="w-6 h-6 text-primary" />
               <h1 className="text-2xl font-medium text-foreground">Tune Your Voice</h1>
             </div>
             <p className="text-muted-foreground text-sm">
@@ -225,6 +225,7 @@ const TuneSamples = () => {
                           onChange={(e) => setNewContent(e.target.value)}
                           rows={4}
                           className="resize-none"
+                          maxLength={5000}
                         />
                         <div className="flex gap-2 justify-end">
                           <Button
@@ -265,7 +266,7 @@ const TuneSamples = () => {
               {/* Empty State */}
               {!isLoading && samplePosts.length === 0 && !isAdding && (
                 <div className="text-center py-12">
-                  <Sparkles className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <Layers className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-foreground mb-2">
                     No sample posts yet
                   </h3>
@@ -301,6 +302,7 @@ const TuneSamples = () => {
                                   onChange={(e) => setEditContent(e.target.value)}
                                   rows={4}
                                   className="resize-none"
+                                  maxLength={5000}
                                 />
                                 <div className="flex gap-2 justify-end">
                                   <Button

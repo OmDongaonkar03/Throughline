@@ -3,7 +3,7 @@ import {
   LayoutDashboard,
   PenLine,
   FileText,
-  Sparkles,
+  Layers,
   Settings,
   LogOut,
   Menu,
@@ -19,7 +19,7 @@ const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: PenLine, label: "Check-ins", path: "/check-ins" },
   { icon: FileText, label: "Posts", path: "/posts" },
-  { icon: Sparkles, label: "Samples", path: "/samples" },
+  { icon: Layers, label: "Samples", path: "/samples" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 

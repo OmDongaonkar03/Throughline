@@ -1,144 +1,186 @@
-import prisma from '../db/prisma.js';
-import { generateDailyPost } from '../mastra/index.js';
+import prisma from "../db/prisma.js";
+import {
+  generateCompleteDailyPosts,
+  generateCompleteWeeklyPosts,
+  generateCompleteMonthlyPosts,
+} from "../mastra/index.js";
 
 /**
  * Process pending generation jobs
- * Runs periodically via cron to generate posts
+ * Called by scheduler every 15 minutes
  */
 export async function processGenerationJobs() {
-  console.log('[Job Processor] Starting job processing...');
-  
-  try {
-    // Fetch pending jobs (limit to 50 per run to avoid overwhelming)
-    const jobs = await prisma.generationJob.findMany({
-      where: {
-        status: 'PENDING',
-      },
-      take: 50,
-      orderBy: {
-        createdAt: 'asc', // Process oldest first
-      },
-    });
-    
-    if (jobs.length === 0) {
-      console.log('[Job Processor] No pending jobs found');
-      return;
-    }
-    
-    console.log(`[Job Processor] Found ${jobs.length} pending jobs`);
-    
-    // Process each job
-    for (const job of jobs) {
-      await processJob(job);
-    }
-    
-    console.log('[Job Processor] Finished processing jobs');
-  } catch (error) {
-    console.error('[Job Processor] Error processing jobs:', error);
-  }
-}
+  console.log("[Process Jobs] Checking for pending jobs...");
 
-// Process a single job
-async function processJob(job) {
-  console.log(`[Job Processor] Processing job ${job.id} (${job.type}) for user ${job.userId}`);
-  
-  try {
-    // Mark job as processing
-    await prisma.generationJob.update({
-      where: { id: job.id },
-      data: {
-        status: 'PROCESSING',
-        startedAt: new Date(),
-      },
-    });
-    
-    // Generate post based on type
-    if (job.type === 'DAILY') {
-      await generateDailyPost(job.userId, job.date, prisma, false);
-    } 
-    /*
-    else if (job.type === 'WEEKLY') {
-      throw new Error('Weekly generation not yet implemented');
-    } 
-    else if (job.type === 'MONTHLY') {
-      throw new Error('Monthly generation not yet implemented');
-    }
-    */
-    
-    // Mark job as completed
-    await prisma.generationJob.update({
-      where: { id: job.id },
-      data: {
-        status: 'COMPLETED',
-        completedAt: new Date(),
-      },
-    });
-    
-    console.log(`[Job Processor] Job ${job.id} completed successfully`);
-  } catch (error) {
-    console.error(`[Job Processor] Job ${job.id} failed:`, error.message);
-    
-    // Mark job as failed
-    await prisma.generationJob.update({
-      where: { id: job.id },
-      data: {
-        status: 'FAILED',
-        error: error.message,
-        completedAt: new Date(),
-      },
-    });
-  }
-}
+  // First, clean up any stalled jobs
+  await cleanupStalledJobs();
 
-// Retry failed jobs
-export async function retryFailedJobs(maxRetries = 3) {
-  console.log('[Job Processor] Retrying failed jobs...');
-  
-  // Get failed jobs from last 24 hours
-  const oneDayAgo = new Date();
-  oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-  
-  const failedJobs = await prisma.generationJob.findMany({
+  const pendingJobs = await prisma.generationJob.findMany({
     where: {
-      status: 'FAILED',
-      createdAt: {
-        gte: oneDayAgo,
+      status: "PENDING",
+    },
+    include: {
+      user: {
+        include: {
+          toneProfile: true,
+        },
       },
     },
-    take: 10, // Limit retries
+    take: 10, // Process max 10 jobs per run
+    orderBy: {
+      createdAt: "asc",
+    },
   });
-  
-  console.log(`[Job Processor] Found ${failedJobs.length} failed jobs to retry`);
-  
-  for (const job of failedJobs) {
-    // Reset to pending for retry
-    await prisma.generationJob.update({
-      where: { id: job.id },
-      data: {
-        status: 'PENDING',
-        error: null,
-        startedAt: null,
-        completedAt: null,
-      },
-    });
-    
-    await processJob(job);
+
+  if (pendingJobs.length === 0) {
+    console.log("[Process Jobs] No pending jobs found");
+    return;
   }
+
+  console.log(`[Process Jobs] Found ${pendingJobs.length} pending jobs`);
+
+  for (const job of pendingJobs) {
+    try {
+      console.log(`[Process Jobs] Processing job ${job.id} for user ${job.userId} (type: ${job.type})`);
+
+      // Mark as processing
+      await prisma.generationJob.update({
+        where: { id: job.id },
+        data: {
+          status: "PROCESSING",
+          startedAt: new Date(),
+        },
+      });
+
+      // Generate using orchestrated functions
+      let result;
+      
+      switch (job.type) {
+        case "DAILY":
+          result = await generateCompleteDailyPosts(
+            job.userId,
+            job.date,
+            prisma,
+            false // isManual = false for scheduled jobs
+          );
+          break;
+          
+        case "WEEKLY":
+          result = await generateCompleteWeeklyPosts(
+            job.userId,
+            job.date,
+            prisma,
+            false
+          );
+          break;
+          
+        case "MONTHLY":
+          result = await generateCompleteMonthlyPosts(
+            job.userId,
+            job.date,
+            prisma,
+            false
+          );
+          break;
+          
+        default:
+          throw new Error(`Unsupported post type: ${job.type}`);
+      }
+
+      console.log(`[Process Jobs] Generated ${job.type} post: ${result.basePost.id}`);
+      console.log(`[Process Jobs] Platform posts: ${result.generated} succeeded, ${result.failed} failed`);
+
+      // Log any platform errors
+      if (result.errors && result.errors.length > 0) {
+        result.errors.forEach(error => {
+          console.error(`[Process Jobs] Platform ${error.platform} failed: ${error.error}`);
+        });
+      }
+
+      // Mark job as completed
+      await prisma.generationJob.update({
+        where: { id: job.id },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+        },
+      });
+
+      console.log(`[Process Jobs] Job ${job.id} completed successfully`);
+    } catch (error) {
+      console.error(`[Process Jobs] Job ${job.id} failed:`, error);
+
+      // Mark job as failed
+      await prisma.generationJob.update({
+        where: { id: job.id },
+        data: {
+          status: "FAILED",
+          error: error.message,
+          completedAt: new Date(),
+        },
+      });
+    }
+  }
+
+  console.log(`[Process Jobs] Processed ${pendingJobs.length} jobs`);
 }
 
-// Cleanup old completed jobs
+/**
+ * Clean up old completed/failed jobs
+ * Keeps only last N days of jobs
+ */
 export async function cleanupOldJobs(daysToKeep = 7) {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-  
-  const result = await prisma.generationJob.deleteMany({
+
+  const deleted = await prisma.generationJob.deleteMany({
     where: {
-      status: 'COMPLETED',
+      status: {
+        in: ["COMPLETED", "FAILED"],
+      },
       completedAt: {
         lt: cutoffDate,
       },
     },
   });
-  
-  console.log(`[Job Processor] Cleaned up ${result.count} old jobs`);
+
+  console.log(`[Cleanup] Deleted ${deleted.count} old jobs`);
+  return deleted.count;
+}
+
+/**
+ * Clean up stalled jobs
+ * Jobs stuck in PROCESSING for more than 30 minutes
+ */
+export async function cleanupStalledJobs() {
+  const cutoffTime = new Date();
+  cutoffTime.setMinutes(cutoffTime.getMinutes() - 30);
+
+  const stalledJobs = await prisma.generationJob.findMany({
+    where: {
+      status: "PROCESSING",
+      startedAt: {
+        lt: cutoffTime,
+      },
+    },
+  });
+
+  if (stalledJobs.length > 0) {
+    console.log(`[Cleanup] Found ${stalledJobs.length} stalled jobs`);
+
+    for (const job of stalledJobs) {
+      await prisma.generationJob.update({
+        where: { id: job.id },
+        data: {
+          status: "FAILED",
+          error: "Job stalled - exceeded 30 minute timeout",
+          completedAt: new Date(),
+        },
+      });
+    }
+
+    console.log(`[Cleanup] Reset ${stalledJobs.length} stalled jobs to FAILED`);
+  }
+
+  return stalledJobs.length;
 }

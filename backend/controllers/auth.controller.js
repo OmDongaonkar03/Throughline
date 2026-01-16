@@ -10,14 +10,18 @@ import {
 } from "../utils/jwt.js";
 import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
+import { createDefaultSchedule, createDefaultPlatformSettings, createDefaultNotificationSettings } from "../utils/schedule.js";
 
 // Helper function to send verification email
 const sendVerificationEmail = async (user) => {
   const verificationToken = generateVerificationToken(user.id, user.email);
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-  
+
   // Create hash of token for storage
-  const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+  const tokenHash = crypto
+    .createHash("sha256")
+    .update(verificationToken)
+    .digest("hex");
 
   // Check rate limit - max 3 verification emails per day
   const startOfDay = new Date();
@@ -33,7 +37,9 @@ const sendVerificationEmail = async (user) => {
   });
 
   if (tokensSentToday >= 3) {
-    throw new Error("Maximum verification emails sent for today. Please try again tomorrow.");
+    throw new Error(
+      "Maximum verification emails sent for today. Please try again tomorrow."
+    );
   }
 
   // Store verification token in database with hash
@@ -93,8 +99,24 @@ export const signup = async (req, res) => {
         createdAt: now,
         updatedAt: now,
       },
-      select: { id: true, email: true, name: true, profilePhoto: true, verified: true, createdAt: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        profilePhoto: true,
+        verified: true,
+        createdAt: true,
+      },
     });
+
+    // Create default generation schedule
+    await createDefaultSchedule(user.id);
+
+    // Create default platform settings
+    await createDefaultPlatformSettings(user.id);
+
+    // Create default notification settings
+    await createDefaultNotificationSettings(user.id);
 
     // Send verification email
     try {
@@ -124,7 +146,8 @@ export const signup = async (req, res) => {
     });
 
     res.status(201).json({
-      message: "User created successfully. Please check your email to verify your account.",
+      message:
+        "User created successfully. Please check your email to verify your account.",
       token: accessToken,
       user,
       verificationSent: true,
@@ -160,19 +183,20 @@ export const login = async (req, res) => {
     if (!user.verified) {
       try {
         await sendVerificationEmail(user);
-        return res.status(403).json({ 
-          message: "Email not verified. A new verification link has been sent to your email.",
+        return res.status(403).json({
+          message:
+            "Email not verified. A new verification link has been sent to your email.",
           verified: false,
           verificationSent: true,
         });
       } catch (emailError) {
         if (emailError.message.includes("Maximum verification emails")) {
-          return res.status(429).json({ 
+          return res.status(429).json({
             message: emailError.message,
             verified: false,
           });
         }
-        return res.status(403).json({ 
+        return res.status(403).json({
           message: "Email not verified. Please contact support.",
           verified: false,
         });
@@ -222,7 +246,9 @@ export const googleCallback = async (req, res) => {
     const { code } = req.query;
 
     if (!code) {
-      return res.status(400).json({ message: "Authorization code not provided" });
+      return res
+        .status(400)
+        .json({ message: "Authorization code not provided" });
     }
 
     // Exchange code for tokens
@@ -244,7 +270,11 @@ export const googleCallback = async (req, res) => {
 
     if (!tokenResponse.ok) {
       console.error("Google token exchange error:", tokenData);
-      throw new Error(`Failed to exchange authorization code: ${tokenData.error || 'Unknown error'}`);
+      throw new Error(
+        `Failed to exchange authorization code: ${
+          tokenData.error || "Unknown error"
+        }`
+      );
     }
 
     const { access_token } = tokenData;
@@ -272,6 +302,7 @@ export const googleCallback = async (req, res) => {
     });
 
     const now = new Date();
+    let isNewUser = false;
 
     if (user) {
       // Update existing user with Google ID and profile photo if not set
@@ -283,13 +314,13 @@ export const googleCallback = async (req, res) => {
           verified: true, // Google OAuth users are auto-verified
           updatedAt: now,
         },
-        select: { 
-          id: true, 
-          email: true, 
-          name: true, 
-          profilePhoto: true, 
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          profilePhoto: true,
           verified: true,
-          createdAt: true 
+          createdAt: true,
         },
       });
     } else {
@@ -304,15 +335,26 @@ export const googleCallback = async (req, res) => {
           createdAt: now,
           updatedAt: now,
         },
-        select: { 
-          id: true, 
-          email: true, 
-          name: true, 
+        select: {
+          id: true,
+          email: true,
+          name: true,
           profilePhoto: true,
-          verified: true, 
-          createdAt: true 
+          verified: true,
+          createdAt: true,
         },
       });
+
+      isNewUser = true;
+
+      // Create default generation schedule
+      await createDefaultSchedule(user.id);
+
+      // Create default platform settings
+      await createDefaultPlatformSettings(user.id);
+
+      // Create default notification settings
+      await createDefaultNotificationSettings(user.id);
     }
 
     // Generate tokens
@@ -375,9 +417,10 @@ export const refresh = async (req, res) => {
 
     // Check if user is verified
     if (!storedToken.user.verified) {
-      return res.status(403).json({ 
-        message: "Email not verified. Please check your email for verification link.",
-        verified: false
+      return res.status(403).json({
+        message:
+          "Email not verified. Please check your email for verification link.",
+        verified: false,
       });
     }
 
@@ -425,9 +468,10 @@ export const me = async (req, res) => {
 
     // Check if user is verified
     if (!storedToken.user.verified) {
-      return res.status(403).json({ 
-        message: "Email not verified. Please check your email for verification link.",
-        verified: false
+      return res.status(403).json({
+        message:
+          "Email not verified. Please check your email for verification link.",
+        verified: false,
       });
     }
 

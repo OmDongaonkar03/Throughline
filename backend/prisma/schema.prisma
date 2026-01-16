@@ -25,6 +25,7 @@ model User {
   toneProfile          ToneProfile?
   generationSchedule   GenerationSchedule?
   generationJobs       GenerationJob[]
+  platformSettings     UserPlatformSettings?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   
@@ -105,7 +106,7 @@ model GeneratedPost {
   type           PostType
   date           DateTime        // The date this post represents
   
-  content        String          @db.Text // Main narrative
+  content        String          @db.Text // Base narrative
   metadata       Json?           // Structured insights
   
   toneProfileId  String?
@@ -118,12 +119,51 @@ model GeneratedPost {
   modelUsed      String?         // e.g., "openai/gpt-4o-mini"
   tokensUsed     Int?
   
+  // Platform adaptations
+  platformPosts  PlatformPost[]
+  
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   
   @@index([userId, date, type])
   @@index([userId, type, isLatest])
   @@index([date])
+}
+
+model PlatformPost {
+  id            String         @id @default(cuid())
+  postId        String
+  post          GeneratedPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  platform      Platform
+  content       String         @db.Text
+  hashtags      Json?          // Array of hashtags
+  
+  createdAt     DateTime       @default(now())
+  
+  @@unique([postId, platform])
+  @@index([postId])
+}
+
+model UserPlatformSettings {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  xEnabled       Boolean @default(false)
+  linkedinEnabled Boolean @default(true)  // Default enabled
+  redditEnabled  Boolean @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([userId])
+}
+
+enum Platform {
+  X
+  LINKEDIN
+  REDDIT
 }
 
 enum PostType {
