@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import CheckIns from "./pages/CheckIns";
 import Posts from "./pages/Posts";
 import SamplePosts from "./pages/Samples";
+import Tone from "./pages/Tone";
 import Settings from "./pages/Settings";
 import VerifyEmail from "./pages/VerifyMail";
 import NotFound from "./pages/NotFound";
@@ -56,6 +57,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Posts />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tone"
+              element={
+                <ProtectedRoute>
+                  <Tone />
                 </ProtectedRoute>
               }
             />

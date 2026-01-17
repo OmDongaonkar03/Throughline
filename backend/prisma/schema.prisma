@@ -182,16 +182,34 @@ model ToneProfile {
   userId         String          @unique
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   
+  // AI-extracted tone characteristics (from sample posts)
   voice          String          @db.Text
   sentenceStyle  String          @db.Text
   emotionalRange String          @db.Text
   commonPhrases  Json?
   exampleText    String          @db.Text
-  
   fullProfile    Json
   
   extractedAt    DateTime        @default(now())
   modelUsed      String
+  
+  // Manual customization fields
+  customVoice         String?         @db.Text     // User's manual override for voice
+  customSentenceStyle String?         @db.Text     // User's manual override for sentence style
+  customEmotionalRange String?        @db.Text     // User's manual override for emotional range
+  
+  // New user-defined fields
+  writingGoals        Json?           // Array of goals: ["educate", "inspire", "entertain", "inform"]
+  targetAudience      Json?           // Array: ["professionals", "students", "general_public", "entrepreneurs"]
+  contentPurpose      String?         @db.Text     // What they want to achieve
+  toneCharacteristics Json?           // Custom characteristics: {formality: 7, enthusiasm: 5, humor: 3}
+  avoidTopics         Json?           // Topics to avoid
+  preferredLength     String?         // "concise", "moderate", "detailed"
+  includeEmojis       Boolean         @default(false)
+  includeHashtags     Boolean         @default(true)
+  
+  manuallyEdited      Boolean         @default(false)
+  lastManualEdit      DateTime?
   
   posts          GeneratedPost[]
   

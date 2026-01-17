@@ -4,6 +4,7 @@ import {
   PenLine,
   FileText,
   Layers,
+  Sliders,
   Settings,
   LogOut,
   Menu,
@@ -20,6 +21,7 @@ const navItems = [
   { icon: PenLine, label: "Check-ins", path: "/check-ins" },
   { icon: FileText, label: "Posts", path: "/posts" },
   { icon: Layers, label: "Samples", path: "/samples" },
+  { icon: Sliders, label: "Customize Tone", path: "/tone" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
