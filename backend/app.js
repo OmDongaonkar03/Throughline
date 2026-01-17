@@ -9,6 +9,7 @@ import checkinRoutes from "./routes/checkin.js";
 import notificationRoutes from "./routes/notification.js";
 import profileRoutes from "./routes/profile.js";
 import samplePostRoutes from "./routes/samplePost.js";
+import toneProfileRoutes from "./routes/toneProfile.js";
 import generationRoutes from "./routes/generation.js";
 import platformRoutes from './routes/platform.js';
 
@@ -35,6 +36,7 @@ app.use("/checkin", checkinRoutes);
 app.use("/notifications", notificationRoutes);
 app.use("/profile", profileRoutes);
 app.use("/sample", samplePostRoutes);
+app.use("/tone", toneProfileRoutes);
 app.use("/generation", generationRoutes);
 app.use("/platform", platformRoutes);
 

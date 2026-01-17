@@ -345,18 +345,6 @@ const Posts = () => {
                                         <p className="text-sm text-foreground whitespace-pre-line mb-2">
                                           {pp.content}
                                         </p>
-                                        {pp.hashtags && pp.hashtags.length > 0 && (
-                                          <div className="flex flex-wrap gap-1 mt-2">
-                                            {pp.hashtags.map((tag, i) => (
-                                              <span
-                                                key={i}
-                                                className="text-xs text-primary bg-primary/10 px-2 py-1 rounded"
-                                              >
-                                                #{tag}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        )}
                                         <div className="flex gap-2 mt-3 pt-3 border-t border-border">
                                           <Button
                                             variant="outline"
