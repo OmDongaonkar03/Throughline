@@ -531,7 +531,7 @@ const Settings = () => {
                       <p className="text-sm text-muted-foreground mb-4">
                         1 post per week after first 3 days. Upgrade to Pro for unlimited posts.
                       </p>
-                      <Button className="w-full">Upgrade to Pro — ₹499/mo</Button>
+                      <Button className="w-full">Upgrade to Pro — ₹399/mo</Button>
                     </div>
 
                     <div className="space-y-3">
