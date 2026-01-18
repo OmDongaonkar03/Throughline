@@ -9,22 +9,22 @@ import { getModelString } from "../../lib/llm-config.js";
 const toneProfileSchema = z.object({
   voice: z
     .string()
-    .describe("Overall voice: casual, professional, technical, friendly, etc."),
+    .describe("Overall voice description: casual/formal, warm/reserved, technical/accessible, authoritative/conversational, etc."),
   sentenceStyle: z
     .string()
-    .describe("Sentence structure: short/punchy, flowing, mixed, etc."),
+    .describe("Sentence structure patterns: short and punchy, long and flowing, mixed rhythm, complex with clauses, simple and direct, etc."),
   emotionalRange: z
     .string()
-    .describe("Emotional expression: reserved, expressive, analytical, etc."),
+    .describe("Emotional expression style: analytical and reserved, enthusiastic and expressive, reflective and thoughtful, matter-of-fact, inspirational, etc."),
   commonPhrases: z
     .array(z.string())
-    .describe("Common phrases or expressions the user uses"),
+    .describe("Signature phrases, expressions, or vocabulary patterns this person uses repeatedly"),
   writingPersonality: z
     .string()
-    .describe("Overall writing personality in 2-3 sentences"),
+    .describe("Overall writing personality in 2-3 sentences - what makes this voice unique and recognizable"),
   exampleSentences: z
     .array(z.string())
-    .describe("3-5 example sentences that capture the tone"),
+    .describe("3-5 representative sentences that perfectly capture how this person writes"),
 });
 
 /**
@@ -34,25 +34,62 @@ const toneProfileSchema = z.object({
 export function createToneExtractorAgent() {
   const agentConfig = {
     name: "tone-extractor",
-    instructions: `You are an expert at analyzing writing style and tone.
-    
-Your task is to analyze sample posts and extract a detailed tone profile that can be used to generate new content in the same style.
+    instructions: `You are an expert at analyzing writing style and extracting actionable tone profiles.
 
-Key things to identify:
-1. Voice: Is it casual/formal, technical/accessible, friendly/professional?
-2. Sentence Structure: Short and punchy? Long and flowing? Mixed?
-3. Emotional Range: Reserved and factual? Expressive and emotive? Analytical?
-4. Common Phrases: What words, phrases, or expressions does this person use repeatedly?
-5. Writing Personality: What's unique about how this person writes?
+Your task is to analyze sample posts and create a detailed profile that future AI agents can use to replicate this person's unique voice.
 
-Be specific and actionable. The profile you create will be used to generate new posts that sound like this person.`,
-    model: getModelString(), 
+WHAT TO ANALYZE:
+
+1. VOICE CHARACTER
+   - Is it formal or casual?
+   - Professional or personal?
+   - Technical or accessible?
+   - Authoritative or conversational?
+   - Warm or reserved?
+
+2. SENTENCE STRUCTURE PATTERNS
+   - Sentence length preferences (short/medium/long)
+   - Complexity (simple vs. complex structures)
+   - Rhythm and pacing
+   - Use of fragments or incomplete sentences
+   - Paragraph structure
+
+3. EMOTIONAL EXPRESSION
+   - How do they express emotion? (restrained, enthusiastic, analytical)
+   - Tone range (serious, playful, inspirational, matter-of-fact)
+   - Use of humor, vulnerability, or intensity
+   - Level of personal vs. impersonal writing
+
+4. VOCABULARY & PHRASING
+   - Common words and phrases they repeat
+   - Technical jargon vs. everyday language
+   - Unique expressions or verbal tics
+   - Metaphors or analogies they favor
+   - Transition words and connectors
+
+5. WRITING PERSONALITY
+   - What makes this voice distinctive?
+   - How would you recognize this person's writing blind?
+   - What's their "signature"?
+
+CRITICAL: Be DESCRIPTIVE and SPECIFIC. Your profile will be used to replicate this voice.
+
+BAD profile: "The writer has a professional tone"
+GOOD profile: "The writer maintains a professional yet approachable voice, balancing technical precision with accessible explanations. Uses 'we' to create partnership with readers."
+
+BAD profile: "They use short sentences"
+GOOD profile: "Sentences are predominantly short (10-15 words), declarative, and direct. Occasional longer sentence for variety, but default is punchy and clear."
+
+Your output will be used by other AI agents to generate content in this exact voice. Make it actionable.`,
+    model: getModelString(),
   };
 
   return new Agent(agentConfig);
 }
 
-// Extract tone profile from sample posts
+/**
+ * Extract tone profile from sample posts
+ */
 export async function extractToneProfile(samplePosts) {
   if (!samplePosts || samplePosts.length === 0) {
     throw new Error("At least one sample post is required for tone extraction");
@@ -62,14 +99,21 @@ export async function extractToneProfile(samplePosts) {
 
   // Combine sample posts with separators
   const samplesText = samplePosts
-    .map((post, idx) => `Sample ${idx + 1}:\n${post}`)
-    .join("\n\n---\n\n");
+    .map((post, idx) => `=== SAMPLE ${idx + 1} ===\n${post}`)
+    .join("\n\n");
 
-  const prompt = `Analyze these writing samples and extract the writing style/tone profile:
+  const prompt = `Analyze these writing samples and extract a comprehensive tone profile.
 
 ${samplesText}
 
-Provide a detailed tone profile that captures this person's unique writing style.`;
+Create a detailed profile that captures:
+1. The writer's unique voice character
+2. Their sentence structure patterns
+3. Their emotional expression style
+4. Their signature phrases and vocabulary
+5. What makes their writing distinctive
+
+Be specific and actionable. This profile will be used to generate new content that sounds exactly like this person.`;
 
   try {
     const response = await agent.generate(prompt, {
@@ -88,7 +132,9 @@ Provide a detailed tone profile that captures this person's unique writing style
   }
 }
 
-// Get tone profile from database or extract if not exists
+/**
+ * Get tone profile from database or extract if not exists
+ */
 export async function getToneProfile(userId, prisma) {
   // Check if tone profile exists
   let toneProfile = await prisma.toneProfile.findUnique({
@@ -133,7 +179,9 @@ export async function getToneProfile(userId, prisma) {
   return toneProfile;
 }
 
-// Update tone profile when sample posts change
+/**
+ * Update tone profile when sample posts change
+ */
 export async function updateToneProfile(userId, prisma) {
   const samplePosts = await prisma.samplePost.findMany({
     where: { userId },
