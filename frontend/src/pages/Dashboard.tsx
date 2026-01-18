@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "../context/AuthContext";
 import { ActivityCalendar, DayDetailsModal } from "@/components/ui/ActivityCalendar";
+import { dashboardService } from "@/services/dashboardService";
 
 interface CheckIn {
   id: string;
@@ -41,9 +42,7 @@ const Dashboard = () => {
   const { toast } = useToast();
   const { apiRequest } = useAuth();
 
-  const API_URL = import.meta.env.VITE_API_URL;
-
-  // Fetch activity stats
+  // Fetch activity stats on mount
   useEffect(() => {
     fetchActivityStats(new Date().getFullYear());
   }, []);
@@ -51,19 +50,13 @@ const Dashboard = () => {
   const fetchActivityStats = async (year: number) => {
     try {
       setIsLoadingStats(true);
-      const response = await apiRequest(`${API_URL}/checkin/stats?year=${year}`);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch activity stats");
-      }
-
-      const data = await response.json();
+      const data = await dashboardService.getActivityStats(apiRequest, year);
       setActivityStats(data);
     } catch (error) {
       console.error("Error fetching activity stats:", error);
       toast({
         title: "Error",
-        description: "Failed to load activity data",
+        description: error.message || "Failed to load activity data",
         variant: "destructive",
       });
     } finally {
@@ -77,19 +70,13 @@ const Dashboard = () => {
     setIsLoadingModal(true);
 
     try {
-      const response = await apiRequest(`${API_URL}/checkin?date=${date}`);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch check-ins");
-      }
-
-      const data = await response.json();
+      const data = await dashboardService.getCheckInsByDate(apiRequest, date);
       setSelectedDateCheckIns(data.checkIns || []);
     } catch (error) {
       console.error("Error fetching day check-ins:", error);
       toast({
         title: "Error",
-        description: "Failed to load check-ins for this day",
+        description: error.message || "Failed to load check-ins for this day",
         variant: "destructive",
       });
     } finally {
@@ -106,12 +93,6 @@ const Dashboard = () => {
       label: "Total check-ins", 
       value: activityStats?.totalCheckIns.toString() || "0", 
       icon: PenLine 
-    },
-    { 
-      label: "Posts generated", 
-      value: "12", 
-      icon: FileText, 
-      trend: "+5" 
     },
     { 
       label: "Current streak", 
@@ -136,7 +117,7 @@ const Dashboard = () => {
           </div>
 
           {/* Stats Grid */}
-          <div className="grid md:grid-cols-3 gap-4 mb-8">
+          <div className="grid md:grid-cols-2 gap-4 mb-8">
             {stats.map((stat, index) => (
               <motion.div
                 key={stat.label}
@@ -150,11 +131,6 @@ const Dashboard = () => {
                       <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
                         <stat.icon className="w-4 h-4 text-primary" />
                       </div>
-                      {stat.trend && (
-                        <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">
-                          {stat.trend}
-                        </span>
-                      )}
                     </div>
                     <p className="text-2xl font-medium text-foreground">
                       {stat.value}
