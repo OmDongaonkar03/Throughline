@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "../context/AuthContext";
+import { checkInService } from "@/services/checkInService";
 
 interface CheckIn {
   id: string;
@@ -26,9 +27,7 @@ const CheckIns = () => {
   const { toast } = useToast();
   const { apiRequest } = useAuth();
 
-  const API_URL = import.meta.env.VITE_API_URL;
-
-  // Fetch today's check-ins
+  // Fetch today's check-ins on mount
   useEffect(() => {
     fetchTodaysCheckIns();
   }, []);
@@ -38,19 +37,13 @@ const CheckIns = () => {
       setIsFetching(true);
       const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD format
 
-      const response = await apiRequest(`${API_URL}/checkin?date=${today}`);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch check-ins");
-      }
-
-      const data = await response.json();
+      const data = await checkInService.getCheckInsByDate(apiRequest, today);
       setTodaysCheckins(data.checkIns || []);
     } catch (error) {
       console.error("Error fetching check-ins:", error);
       toast({
         title: "Error",
-        description: "Failed to load check-ins",
+        description: error.message || "Failed to load check-ins",
         variant: "destructive",
       });
     } finally {
@@ -71,21 +64,7 @@ const CheckIns = () => {
     try {
       setIsLoading(true);
 
-      const response = await apiRequest(`${API_URL}/checkin`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          content: checkinText.trim(),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to create check-in");
-      }
-
-      const data = await response.json();
+      const data = await checkInService.createCheckIn(apiRequest, checkinText.trim());
       
       // Add new check-in to the list
       setTodaysCheckins([data.checkIn, ...todaysCheckins]);
@@ -99,7 +78,7 @@ const CheckIns = () => {
       console.error("Error creating check-in:", error);
       toast({
         title: "Error",
-        description: "Failed to save check-in",
+        description: error.message || "Failed to save check-in",
         variant: "destructive",
       });
     } finally {
