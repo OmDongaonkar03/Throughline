@@ -27,16 +27,16 @@ export const extractTone = async (req, res) => {
       });
     }
 
-    // Get user's sample posts
+    // Get user's sample posts (minimum 1 required)
     const samplePosts = await prisma.samplePost.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
       take: 5,
     });
 
-    if (samplePosts.length === 0) {
+    if (samplePosts.length < 1) {
       return res.status(400).json({
-        message: "No sample posts found. Please add at least one sample post first.",
+        message: "At least 1 sample post is required to generate tone profile.",
       });
     }
 

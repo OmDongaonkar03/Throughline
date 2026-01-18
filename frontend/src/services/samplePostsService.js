@@ -85,4 +85,26 @@ export const samplePostService = {
 
     return result;
   },
+
+  /**
+   * Extract tone profile from sample posts (manual trigger)
+   * @param {Function} apiRequest - The authenticated API request function from AuthContext
+   * @returns {Promise<Object>} Extracted tone profile
+   */
+  extractTone: async (apiRequest) => {
+    const response = await apiRequest(`${API_URL}/generation/tone/extract`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.message || "Failed to extract tone profile");
+    }
+
+    return result;
+  },
 };

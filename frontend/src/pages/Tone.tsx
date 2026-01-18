@@ -262,12 +262,6 @@ const ToneCustomization = () => {
                     </p>
                   </div>
                 </div>
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertDescription className="text-xs">
-                    These are automatically detected from your sample posts. You can override them below with your own preferences.
-                  </AlertDescription>
-                </Alert>
               </CardContent>
             </Card>
           )}

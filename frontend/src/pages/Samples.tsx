@@ -6,7 +6,9 @@ import {
   Save,
   X,
   Info,
-  Layers
+  Layers,
+  Sparkles,
+  RefreshCw
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -28,6 +30,9 @@ const TuneSamples = () => {
   const [editingId, setEditingId] = useState(null);
   const [editContent, setEditContent] = useState("");
   const [actionLoading, setActionLoading] = useState(null);
+  const [hasToneProfile, setHasToneProfile] = useState(false);
+  const [toneProfileLastUpdated, setToneProfileLastUpdated] = useState(null);
+  const [isGeneratingTone, setIsGeneratingTone] = useState(false);
   
   const { toast } = useToast();
   const { apiRequest } = useAuth();
@@ -41,6 +46,8 @@ const TuneSamples = () => {
       setIsLoading(true);
       const data = await samplePostService.getSamplePosts(apiRequest);
       setSamplePosts(data.samplePosts || []);
+      setHasToneProfile(data.hasToneProfile || false);
+      setToneProfileLastUpdated(data.toneProfileLastUpdated);
     } catch (error) {
       console.error("Error fetching sample posts:", error);
       toast({
@@ -148,6 +155,39 @@ const TuneSamples = () => {
     }
   };
 
+  const handleGenerateTone = async () => {
+    if (samplePosts.length < 1) {
+      toast({
+        title: "Error",
+        description: "You need at least 1 sample post to generate tone profile",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsGeneratingTone(true);
+      const result = await samplePostService.extractTone(apiRequest);
+      
+      toast({
+        title: "Success",
+        description: "Tone profile generated successfully",
+      });
+      
+      setHasToneProfile(true);
+      setToneProfileLastUpdated(result.toneProfile.extractedAt);
+    } catch (error) {
+      console.error("Error generating tone:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate tone profile",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingTone(false);
+    }
+  };
+
   const startEditing = (post) => {
     setEditingId(post.id);
     setEditContent(post.content);
@@ -164,6 +204,18 @@ const TuneSamples = () => {
   };
 
   const canAddMore = samplePosts.length < MAX_SAMPLE_POSTS;
+  const canGenerateTone = samplePosts.length >= 1;
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "";
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   return (
     <AppLayout>
@@ -184,6 +236,16 @@ const TuneSamples = () => {
             </p>
           </div>
 
+          {/* Tone Profile Status */}
+          {hasToneProfile && (
+            <Alert className="mb-6">
+              <Sparkles className="h-4 w-4" />
+              <AlertDescription className="text-sm">
+                Tone profile generated {toneProfileLastUpdated && `on ${formatDate(toneProfileLastUpdated)}`}
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Main Content */}
           <Card>
             <CardHeader>
@@ -194,16 +256,30 @@ const TuneSamples = () => {
                     {samplePosts.length} of {MAX_SAMPLE_POSTS} samples added
                   </CardDescription>
                 </div>
-                {canAddMore && !isAdding && (
-                  <Button
-                    onClick={() => setIsAdding(true)}
-                    size="sm"
-                    className="gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Sample
-                  </Button>
-                )}
+                <div className="flex gap-2">
+                  {canGenerateTone && (
+                    <Button
+                      onClick={handleGenerateTone}
+                      disabled={isGeneratingTone}
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      {isGeneratingTone ? "Generating..." : hasToneProfile ? "Regenerate Tone" : "Generate Tone"}
+                    </Button>
+                  )}
+                  {canAddMore && !isAdding && (
+                    <Button
+                      onClick={() => setIsAdding(true)}
+                      size="sm"
+                      className="gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Sample
+                    </Button>
+                  )}
+                </div>
               </div>
             </CardHeader>
 
@@ -369,15 +445,31 @@ const TuneSamples = () => {
                 </div>
               )}
 
-              {/* Max Reached Message */}
-              {!canAddMore && !isAdding && samplePosts.length > 0 && (
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertDescription className="text-sm">
-                    You've reached the maximum of {MAX_SAMPLE_POSTS} sample posts. 
-                    Delete one to add another.
-                  </AlertDescription>
-                </Alert>
+              {/* Info Messages */}
+              {!isLoading && samplePosts.length > 0 && (
+                <div className="space-y-2">
+                  {/* Max Reached Message */}
+                  {!canAddMore && (
+                    <Alert>
+                      <Info className="h-4 w-4" />
+                      <AlertDescription className="text-sm">
+                        You've reached the maximum of {MAX_SAMPLE_POSTS} sample posts. 
+                        Delete one to add another.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  {/* Tone Generation Prompt */}
+                  {!hasToneProfile && canGenerateTone && (
+                    <Alert>
+                      <Sparkles className="h-4 w-4" />
+                      <AlertDescription className="text-sm">
+                        You have {samplePosts.length} sample post{samplePosts.length > 1 ? 's' : ''}. 
+                        Click "Generate Tone" to create your personalized tone profile.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>
