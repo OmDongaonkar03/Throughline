@@ -1,6 +1,7 @@
 import { Agent } from "@mastra/core/agent";
 import { getModelString } from "../../lib/llm-config.js";
 import { getPlatformSpec } from "../../lib/platform-specs.js";
+import { buildCompleteToneProfile } from "../../lib/tone-profile-builder.js";
 
 export function createPlatformAdapterAgent() {
   const agentConfig = {
@@ -10,10 +11,11 @@ export function createPlatformAdapterAgent() {
 Your task is to take a base narrative and optimize it for a specific platform while:
 1. Maintaining the core message and insights
 2. Matching the platform's style and constraints
-3. Keeping the user's original tone and voice
+3. PRESERVING THE USER'S EXACT VOICE AND TONE
 4. Following platform best practices
+5. Respecting user preferences for emojis, hashtags, length
 
-Be creative but faithful to the original content.`,
+CRITICAL: You are NOT rewriting in a "platform style" - you're adapting the user's authentic voice to fit platform constraints. The voice stays the same, only the format changes.`,
     model: getModelString(),
   };
 
@@ -31,48 +33,119 @@ export async function adaptForPlatform(
 ) {
   const spec = getPlatformSpec(platform);
   const agent = createPlatformAdapterAgent();
+  const completeTone = buildCompleteToneProfile(toneProfile);
 
-  const toneGuidance = toneProfile
-    ? `
-User's writing style:
-- Voice: ${toneProfile.voice}
-- Sentence Style: ${toneProfile.sentenceStyle}
-- Emotional Range: ${toneProfile.emotionalRange}
-`
-    : "";
+  // Build tone guidance
+  let toneGuidance = "";
+  if (completeTone) {
+    toneGuidance = `
+USER'S VOICE (preserve this exactly):
+- Voice: ${completeTone.voice}
+- Sentence Style: ${completeTone.sentenceStyle}
+- Emotional Range: ${completeTone.emotionalRange}`;
 
-  const prompt = `Adapt this narrative for ${spec.name}:
+    if (completeTone.commonPhrases?.length > 0) {
+      toneGuidance += `
+- Common Phrases: ${completeTone.commonPhrases.join(", ")}`;
+    }
+  }
+
+  // Build preference guidance
+  let preferenceGuidance = `
+USER PREFERENCES:`;
+
+  if (completeTone) {
+    // Emoji preference
+    if (completeTone.includeEmojis) {
+      preferenceGuidance += `
+- Emojis: Use sparingly when natural (user allows emojis)`;
+    } else {
+      preferenceGuidance += `
+- Emojis: NEVER use (user prefers no emojis)`;
+    }
+
+    // Hashtag preference
+    if (completeTone.includeHashtags && spec.hashtagLimit > 0) {
+      preferenceGuidance += `
+- Hashtags: Include ${spec.hashtagLimit} relevant hashtags at the end`;
+    } else {
+      preferenceGuidance += `
+- Hashtags: Do not include (user prefers no hashtags or platform doesn't support them)`;
+    }
+
+    // Length preference
+    if (completeTone.preferredLength) {
+      const lengthMap = {
+        concise: "Keep it tight - aim for the shorter end of the platform limit",
+        moderate: "Use moderate length - find the sweet spot",
+        detailed: "Use more space - develop ideas more fully within platform limits",
+      };
+      preferenceGuidance += `
+- Length: ${lengthMap[completeTone.preferredLength] || completeTone.preferredLength}`;
+    }
+
+    // Target audience
+    if (completeTone.targetAudience?.length > 0) {
+      preferenceGuidance += `
+- Target Audience: ${completeTone.targetAudience.join(", ")}`;
+    }
+  }
+
+  const prompt = `Adapt this narrative for ${spec.name} while preserving the user's exact voice.
 
 BASE NARRATIVE:
 ${baseContent}
 
 KEY THEMES: ${metadata.themes?.join(", ") || "None"}
 HIGHLIGHTS: ${metadata.highlights?.join(", ") || "None"}
+INSIGHTS: ${metadata.insights?.join(", ") || metadata.patterns?.join(", ") || "None"}
 
 ${toneGuidance}
 
-PLATFORM REQUIREMENTS (${spec.name}):
+${preferenceGuidance}
+
+PLATFORM CONSTRAINTS (${spec.name}):
 - Max length: ${spec.maxLength} characters
 - Style: ${spec.style}
 - Tone: ${spec.tone}
-- Hashtag limit: ${spec.hashtagLimit}
-${spec.features.emojis ? "- You can use emojis" : "- No emojis"}
+
+ADAPTATION STRATEGY:
+1. Keep the user's voice and sentence structure
+2. Adapt length to fit platform constraints
+3. Respect user's emoji/hashtag preferences
+4. Maintain the core insights and message
+5. Format appropriately for the platform
+
+If you need to shorten content, cut the less critical parts but keep the sharpness and specificity of the original voice.
 
 OUTPUT FORMAT:
-Return ONLY the adapted post content, nothing else. No preamble, no explanation.
-${
-  spec.hashtagLimit > 0
-    ? "Include relevant hashtags at the end."
-    : "Do not include hashtags."
-}`;
+Return ONLY the adapted post content, nothing else. No preamble, no explanation, no meta-commentary.`;
 
   try {
     const response = await agent.generate(prompt);
-    const content = response.text.trim();
+    let content = response.text.trim();
+
+    // Remove any markdown code blocks that might have been added
+    content = content.replace(/```\n?/g, "").trim();
 
     // Extract hashtags if present
-    const hashtags =
-      spec.hashtagLimit > 0 ? extractHashtags(content, spec.hashtagLimit) : [];
+    let hashtags = [];
+    if (completeTone?.includeHashtags && spec.hashtagLimit > 0) {
+      hashtags = extractHashtags(content, spec.hashtagLimit);
+    } else {
+      // Remove hashtags if user doesn't want them
+      content = content.replace(/#\w+/g, "").trim();
+    }
+
+    // Remove emojis if user doesn't want them
+    if (completeTone && !completeTone.includeEmojis) {
+      // Remove emoji characters (basic emoji removal)
+      content = content.replace(
+        /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu,
+        ""
+      );
+      content = content.replace(/\s+/g, " ").trim(); // Clean up extra spaces
+    }
 
     return {
       content,
