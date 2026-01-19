@@ -12,18 +12,15 @@ import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
 import { createDefaultSchedule, createDefaultPlatformSettings, createDefaultNotificationSettings } from "../utils/schedule.js";
 
-// Helper function to send verification email
 const sendVerificationEmail = async (user) => {
   const verificationToken = generateVerificationToken(user.id, user.email);
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-  // Create hash of token for storage
   const tokenHash = crypto
     .createHash("sha256")
     .update(verificationToken)
     .digest("hex");
 
-  // Check rate limit - max 3 verification emails per day
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
@@ -42,7 +39,6 @@ const sendVerificationEmail = async (user) => {
     );
   }
 
-  // Store verification token in database with hash
   await prisma.verificationToken.create({
     data: {
       token: verificationToken,
@@ -54,17 +50,14 @@ const sendVerificationEmail = async (user) => {
     },
   });
 
-  // Generate verification link
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
   const verificationLink = `${frontendUrl}/verify-email?token=${verificationToken}`;
 
-  // Get email template
   const emailContent = verificationEmailTemplate({
     name: user.name,
     verificationLink,
   });
 
-  // Send email
   await sendMail({
     to: user.email,
     subject: emailContent.subject,
@@ -73,7 +66,6 @@ const sendVerificationEmail = async (user) => {
   });
 };
 
-// Signup controller
 export const signup = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -89,56 +81,83 @@ export const signup = async (req, res) => {
 
     const hashedPassword = await hashPassword(password);
     const now = new Date();
+    const accessToken = generateAccessToken();
+    const refreshTokenValue = generateRefreshToken();
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        verified: false, // Start as unverified
-        createdAt: now,
-        updatedAt: now,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        profilePhoto: true,
-        verified: true,
-        createdAt: true,
-      },
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          verified: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          profilePhoto: true,
+          verified: true,
+          createdAt: true,
+        },
+      });
+
+      await tx.generationSchedule.create({
+        data: {
+          userId: user.id,
+          dailyEnabled: true,
+          dailyTime: "21:00",
+          weeklyEnabled: true,
+          weeklyDay: 0,
+          weeklyTime: "20:00",
+          monthlyEnabled: true,
+          monthlyDay: 28,
+          monthlyTime: "20:00",
+          timezone: process.env.TZ || "Asia/Kolkata",
+        },
+      });
+
+      await tx.userPlatformSettings.create({
+        data: {
+          userId: user.id,
+          xEnabled: false,
+          linkedinEnabled: true,
+          redditEnabled: false,
+        },
+      });
+
+      await tx.notificationSettings.create({
+        data: {
+          userId: user.id,
+          emailDigest: false,
+          postReminders: true,
+          weeklyReport: false,
+        },
+      });
+
+      await tx.refreshToken.create({
+        data: {
+          token: refreshTokenValue,
+          userId: user.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          createdAt: new Date(),
+        },
+      });
+
+      return user;
     });
 
-    // Create default generation schedule
-    await createDefaultSchedule(user.id);
-
-    // Create default platform settings
-    await createDefaultPlatformSettings(user.id);
-
-    // Create default notification settings
-    await createDefaultNotificationSettings(user.id);
-
-    // Send verification email
     try {
-      await sendVerificationEmail(user);
+      await sendVerificationEmail(result);
     } catch (emailError) {
       console.error("Failed to send verification email:", emailError);
-      // Continue with signup even if email fails
     }
 
-    const accessToken = generateAccessToken(user.id);
-    const refreshToken = generateRefreshToken(user.id);
+    const finalAccessToken = generateAccessToken(result.id);
 
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        createdAt: new Date(),
-      },
-    });
-
-    res.cookie("refreshToken", refreshToken, {
+    res.cookie("refreshToken", refreshTokenValue, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
@@ -148,8 +167,8 @@ export const signup = async (req, res) => {
     res.status(201).json({
       message:
         "User created successfully. Please check your email to verify your account.",
-      token: accessToken,
-      user,
+      token: finalAccessToken,
+      user: result,
       verificationSent: true,
     });
   } catch (error) {
@@ -158,7 +177,6 @@ export const signup = async (req, res) => {
   }
 };
 
-// Login controller
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -179,7 +197,6 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // If user is not verified, send verification email
     if (!user.verified) {
       try {
         await sendVerificationEmail(user);
@@ -240,7 +257,6 @@ export const login = async (req, res) => {
   }
 };
 
-// Google OAuth callback controller
 export const googleCallback = async (req, res) => {
   try {
     const { code } = req.query;
@@ -251,7 +267,6 @@ export const googleCallback = async (req, res) => {
         .json({ message: "Authorization code not provided" });
     }
 
-    // Exchange code for tokens
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: {
@@ -279,7 +294,6 @@ export const googleCallback = async (req, res) => {
 
     const { access_token } = tokenData;
 
-    // Get user info from Google
     const userInfoResponse = await fetch(
       "https://www.googleapis.com/oauth2/v2/userinfo",
       {
@@ -296,88 +310,125 @@ export const googleCallback = async (req, res) => {
     const googleUser = await userInfoResponse.json();
     const { id: googleId, email, name, picture } = googleUser;
 
-    // Check if user exists
     let user = await prisma.user.findUnique({
       where: { email },
     });
 
     const now = new Date();
-    let isNewUser = false;
+    const refreshTokenValue = generateRefreshToken();
 
     if (user) {
-      // Update existing user with Google ID and profile photo if not set
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          googleId: googleId,
-          profilePhoto: picture,
-          verified: true, // Google OAuth users are auto-verified
-          updatedAt: now,
-        },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          profilePhoto: true,
-          verified: true,
-          createdAt: true,
-        },
+      const result = await prisma.$transaction(async (tx) => {
+        const updatedUser = await tx.user.update({
+          where: { id: user.id },
+          data: {
+            googleId: googleId,
+            profilePhoto: picture,
+            verified: true,
+            updatedAt: now,
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            profilePhoto: true,
+            verified: true,
+            createdAt: true,
+          },
+        });
+
+        await tx.refreshToken.create({
+          data: {
+            token: refreshTokenValue,
+            userId: updatedUser.id,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            createdAt: new Date(),
+          },
+        });
+
+        return updatedUser;
       });
+
+      user = result;
     } else {
-      // Create new user
-      user = await prisma.user.create({
-        data: {
-          email,
-          name,
-          googleId,
-          profilePhoto: picture,
-          verified: true, // Google OAuth users are auto-verified
-          createdAt: now,
-          updatedAt: now,
-        },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          profilePhoto: true,
-          verified: true,
-          createdAt: true,
-        },
+      const result = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.user.create({
+          data: {
+            email,
+            name,
+            googleId,
+            profilePhoto: picture,
+            verified: true,
+            createdAt: now,
+            updatedAt: now,
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            profilePhoto: true,
+            verified: true,
+            createdAt: true,
+          },
+        });
+
+        await tx.generationSchedule.create({
+          data: {
+            userId: newUser.id,
+            dailyEnabled: true,
+            dailyTime: "21:00",
+            weeklyEnabled: true,
+            weeklyDay: 0,
+            weeklyTime: "20:00",
+            monthlyEnabled: true,
+            monthlyDay: 28,
+            monthlyTime: "20:00",
+            timezone: process.env.TZ || "Asia/Kolkata",
+          },
+        });
+
+        await tx.userPlatformSettings.create({
+          data: {
+            userId: newUser.id,
+            xEnabled: false,
+            linkedinEnabled: true,
+            redditEnabled: false,
+          },
+        });
+
+        await tx.notificationSettings.create({
+          data: {
+            userId: newUser.id,
+            emailDigest: false,
+            postReminders: true,
+            weeklyReport: false,
+          },
+        });
+
+        await tx.refreshToken.create({
+          data: {
+            token: refreshTokenValue,
+            userId: newUser.id,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            createdAt: new Date(),
+          },
+        });
+
+        return newUser;
       });
 
-      isNewUser = true;
-
-      // Create default generation schedule
-      await createDefaultSchedule(user.id);
-
-      // Create default platform settings
-      await createDefaultPlatformSettings(user.id);
-
-      // Create default notification settings
-      await createDefaultNotificationSettings(user.id);
+      user = result;
     }
 
-    // Generate tokens
     const accessToken = generateAccessToken(user.id);
-    const refreshToken = generateRefreshToken(user.id);
 
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        createdAt: new Date(),
-      },
-    });
-
-    res.cookie("refreshToken", refreshToken, {
+    res.cookie("refreshToken", refreshTokenValue, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // Redirect to frontend with token
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     res.redirect(`${frontendUrl}/auth/callback?token=${accessToken}`);
   } catch (error) {
@@ -387,7 +438,6 @@ export const googleCallback = async (req, res) => {
   }
 };
 
-// Refresh token controller
 export const refresh = async (req, res) => {
   try {
     const { refreshToken } = req.cookies;
@@ -415,7 +465,6 @@ export const refresh = async (req, res) => {
       return res.status(401).json({ message: "Refresh token expired" });
     }
 
-    // Check if user is verified
     if (!storedToken.user.verified) {
       return res.status(403).json({
         message:
@@ -443,7 +492,6 @@ export const refresh = async (req, res) => {
   }
 };
 
-// Get current user controller
 export const me = async (req, res) => {
   try {
     const { refreshToken } = req.cookies;
@@ -466,7 +514,6 @@ export const me = async (req, res) => {
       return res.status(401).json({ message: "Session expired" });
     }
 
-    // Check if user is verified
     if (!storedToken.user.verified) {
       return res.status(403).json({
         message:
@@ -495,7 +542,6 @@ export const me = async (req, res) => {
   }
 };
 
-// Logout controller
 export const logout = async (req, res) => {
   try {
     const { refreshToken } = req.cookies;

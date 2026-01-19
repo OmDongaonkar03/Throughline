@@ -5,54 +5,58 @@ import {
   generateCompleteMonthlyPosts,
 } from "../mastra/index.js";
 
-/**
- * Process pending generation jobs
- * Called by scheduler every 15 minutes
- */
 export async function processGenerationJobs() {
   console.log("[Process Jobs] Checking for pending jobs...");
 
-  // First, clean up any stalled jobs
   await cleanupStalledJobs();
 
-  const pendingJobs = await prisma.generationJob.findMany({
-    where: {
-      status: "PENDING",
-    },
-    include: {
-      user: {
-        include: {
-          toneProfile: true,
+  const jobs = await prisma.$transaction(async (tx) => {
+    const pendingJobs = await tx.generationJob.findMany({
+      where: {
+        status: "PENDING",
+      },
+      include: {
+        user: {
+          include: {
+            toneProfile: true,
+          },
         },
       },
-    },
-    take: 10, // Process max 10 jobs per run
-    orderBy: {
-      createdAt: "asc",
-    },
+      take: 10,
+      orderBy: {
+        createdAt: "asc",
+      },
+    });
+
+    if (pendingJobs.length === 0) {
+      return [];
+    }
+
+    const jobIds = pendingJobs.map(j => j.id);
+    await tx.generationJob.updateMany({
+      where: {
+        id: { in: jobIds },
+      },
+      data: {
+        status: "PROCESSING",
+        startedAt: new Date(),
+      },
+    });
+
+    return pendingJobs;
   });
 
-  if (pendingJobs.length === 0) {
+  if (jobs.length === 0) {
     console.log("[Process Jobs] No pending jobs found");
     return;
   }
 
-  console.log(`[Process Jobs] Found ${pendingJobs.length} pending jobs`);
+  console.log(`[Process Jobs] Processing ${jobs.length} jobs`);
 
-  for (const job of pendingJobs) {
+  for (const job of jobs) {
     try {
       console.log(`[Process Jobs] Processing job ${job.id} for user ${job.userId} (type: ${job.type})`);
 
-      // Mark as processing
-      await prisma.generationJob.update({
-        where: { id: job.id },
-        data: {
-          status: "PROCESSING",
-          startedAt: new Date(),
-        },
-      });
-
-      // Generate using orchestrated functions
       let result;
       
       switch (job.type) {
@@ -61,7 +65,7 @@ export async function processGenerationJobs() {
             job.userId,
             job.date,
             prisma,
-            false // isManual = false for scheduled jobs
+            false
           );
           break;
           
@@ -90,14 +94,12 @@ export async function processGenerationJobs() {
       console.log(`[Process Jobs] Generated ${job.type} post: ${result.basePost.id}`);
       console.log(`[Process Jobs] Platform posts: ${result.generated} succeeded, ${result.failed} failed`);
 
-      // Log any platform errors
       if (result.errors && result.errors.length > 0) {
         result.errors.forEach(error => {
           console.error(`[Process Jobs] Platform ${error.platform} failed: ${error.error}`);
         });
       }
 
-      // Mark job as completed
       await prisma.generationJob.update({
         where: { id: job.id },
         data: {
@@ -110,7 +112,6 @@ export async function processGenerationJobs() {
     } catch (error) {
       console.error(`[Process Jobs] Job ${job.id} failed:`, error);
 
-      // Mark job as failed
       await prisma.generationJob.update({
         where: { id: job.id },
         data: {
@@ -122,13 +123,9 @@ export async function processGenerationJobs() {
     }
   }
 
-  console.log(`[Process Jobs] Processed ${pendingJobs.length} jobs`);
+  console.log(`[Process Jobs] Processed ${jobs.length} jobs`);
 }
 
-/**
- * Clean up old completed/failed jobs
- * Keeps only last N days of jobs
- */
 export async function cleanupOldJobs(daysToKeep = 7) {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
@@ -148,10 +145,6 @@ export async function cleanupOldJobs(daysToKeep = 7) {
   return deleted.count;
 }
 
-/**
- * Clean up stalled jobs
- * Jobs stuck in PROCESSING for more than 30 minutes
- */
 export async function cleanupStalledJobs() {
   const cutoffTime = new Date();
   cutoffTime.setMinutes(cutoffTime.getMinutes() - 30);

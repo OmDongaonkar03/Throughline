@@ -4,13 +4,7 @@ import { generateMonthlyPost } from "./monthly-generator.js";
 import { adaptForPlatform } from "./platform-adapter.js";
 import { getEnabledPlatforms } from "../../lib/platform-specs.js";
 
-/**
- * Generate posts for all enabled platforms
- * This is the main entry point for post generation
- * Platforms are always determined from user settings
- */
 export async function generatePlatformPosts(basePost, userId, prisma) {
-  // 1. Get user's platform settings
   const platformSettings = await prisma.userPlatformSettings.findUnique({
     where: { userId },
   });
@@ -19,19 +13,16 @@ export async function generatePlatformPosts(basePost, userId, prisma) {
     throw new Error("User platform settings not found");
   }
 
-  // 2. Get enabled platforms from user settings
   const platforms = getEnabledPlatforms(platformSettings);
 
   if (platforms.length === 0) {
     throw new Error("No platforms enabled");
   }
 
-  // 3. Get user's tone profile
   const toneProfile = await prisma.toneProfile.findUnique({
     where: { userId },
   });
 
-  // 4. Generate platform-specific posts
   const platformPosts = [];
   const errors = [];
 
@@ -44,7 +35,6 @@ export async function generatePlatformPosts(basePost, userId, prisma) {
         toneProfile
       );
 
-      // Save platform post
       const platformPost = await prisma.platformPost.create({
         data: {
           postId: basePost.id,
@@ -61,7 +51,6 @@ export async function generatePlatformPosts(basePost, userId, prisma) {
     }
   }
 
-  // 5. Return results
   return {
     success: platformPosts.length > 0,
     platformPosts,
@@ -71,16 +60,12 @@ export async function generatePlatformPosts(basePost, userId, prisma) {
   };
 }
 
-/**
- * Generate complete daily posts (base + all enabled platforms)
- */
 export async function generateCompleteDailyPosts(
   userId,
   targetDate,
   prisma,
   isManual = false
 ) {
-  // 1. Generate base narrative
   const basePost = await generateDailyPost(
     userId,
     targetDate,
@@ -88,7 +73,6 @@ export async function generateCompleteDailyPosts(
     isManual
   );
 
-  // 2. Generate platform-specific posts for all enabled platforms
   const platformResult = await generatePlatformPosts(basePost, userId, prisma);
 
   return {
@@ -97,16 +81,12 @@ export async function generateCompleteDailyPosts(
   };
 }
 
-/**
- * Generate complete weekly posts (base + all enabled platforms)
- */
 export async function generateCompleteWeeklyPosts(
   userId,
   targetDate,
   prisma,
   isManual = false
 ) {
-  // 1. Generate base narrative
   const basePost = await generateWeeklyPost(
     userId,
     targetDate,
@@ -114,7 +94,6 @@ export async function generateCompleteWeeklyPosts(
     isManual
   );
 
-  // 2. Generate platform-specific posts for all enabled platforms
   const platformResult = await generatePlatformPosts(basePost, userId, prisma);
 
   return {
@@ -123,16 +102,12 @@ export async function generateCompleteWeeklyPosts(
   };
 }
 
-/**
- * Generate complete monthly posts (base + all enabled platforms)
- */
 export async function generateCompleteMonthlyPosts(
   userId,
   targetDate,
   prisma,
   isManual = false
 ) {
-  // 1. Generate base narrative
   const basePost = await generateMonthlyPost(
     userId,
     targetDate,
@@ -140,7 +115,6 @@ export async function generateCompleteMonthlyPosts(
     isManual
   );
 
-  // 2. Generate platform-specific posts for all enabled platforms
   const platformResult = await generatePlatformPosts(basePost, userId, prisma);
 
   return {
@@ -149,12 +123,56 @@ export async function generateCompleteMonthlyPosts(
   };
 }
 
-/**
- * Regenerate platform posts for an existing base post
- * Always regenerates for ALL currently enabled platforms
- */
+async function generateNewPlatformPosts(basePost, userId, prisma) {
+  const platformSettings = await prisma.userPlatformSettings.findUnique({
+    where: { userId },
+  });
+
+  if (!platformSettings) {
+    throw new Error("User platform settings not found");
+  }
+
+  const platforms = getEnabledPlatforms(platformSettings);
+  
+  if (platforms.length === 0) {
+    throw new Error("No platforms enabled");
+  }
+
+  const toneProfile = await prisma.toneProfile.findUnique({
+    where: { userId },
+  });
+
+  const platformPosts = [];
+  const errors = [];
+
+  for (const platform of platforms) {
+    try {
+      const adaptedPost = await adaptForPlatform(
+        basePost.content,
+        basePost.metadata,
+        platform,
+        toneProfile
+      );
+
+      platformPosts.push({
+        platform: adaptedPost.platform,
+        content: adaptedPost.content,
+        hashtags: adaptedPost.hashtags,
+      });
+    } catch (error) {
+      console.error(`Failed to generate ${platform} post:`, error);
+      errors.push({ platform, error: error.message });
+    }
+  }
+
+  if (platformPosts.length === 0) {
+    throw new Error("Failed to generate any platform posts");
+  }
+
+  return { platformPosts, errors };
+}
+
 export async function regeneratePlatformPosts(basePostId, userId, prisma) {
-  // 1. Get the base post
   const basePost = await prisma.generatedPost.findUnique({
     where: { id: basePostId },
   });
@@ -167,20 +185,42 @@ export async function regeneratePlatformPosts(basePostId, userId, prisma) {
     throw new Error("Unauthorized: Post belongs to different user");
   }
 
-  // 2. Delete old platform posts
-  await prisma.platformPost.deleteMany({
-    where: {
-      postId: basePostId,
-    },
+  const { platformPosts: newPosts, errors } = await generateNewPlatformPosts(
+    basePost,
+    userId,
+    prisma
+  );
+
+  const savedPosts = await prisma.$transaction(async (tx) => {
+    await tx.platformPost.deleteMany({
+      where: { postId: basePostId },
+    });
+
+    const created = [];
+    for (const post of newPosts) {
+      const platformPost = await tx.platformPost.create({
+        data: {
+          postId: basePostId,
+          platform: post.platform,
+          content: post.content,
+          hashtags: post.hashtags,
+        },
+      });
+      created.push(platformPost);
+    }
+
+    return created;
   });
 
-  // 3. Generate new platform posts for all currently enabled platforms
-  return await generatePlatformPosts(basePost, userId, prisma);
+  return {
+    success: true,
+    platformPosts: savedPosts,
+    generated: savedPosts.length,
+    failed: errors.length,
+    errors,
+  };
 }
 
-/**
- * Get posts for display (base + platform posts)
- */
 export async function getPostsWithPlatforms(userId, type, targetDate, prisma) {
   const basePost = await prisma.generatedPost.findFirst({
     where: {
@@ -197,10 +237,6 @@ export async function getPostsWithPlatforms(userId, type, targetDate, prisma) {
   return basePost;
 }
 
-/**
- * Check regeneration limits
- * Returns true if user can regenerate, false if limit exceeded
- */
 export async function canUserRegenerate(userId, prisma) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -219,9 +255,6 @@ export async function canUserRegenerate(userId, prisma) {
   return regenerationCount < DAILY_LIMIT;
 }
 
-/**
- * Get regeneration count for today
- */
 export async function getRegenerationCount(userId, prisma) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
