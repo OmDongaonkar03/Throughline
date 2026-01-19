@@ -4,6 +4,57 @@ import { canUserRegenerate, getRegenerationCount } from "../mastra/index.js";
 import { startOfDay } from "../lib/time.js";
 import { isLLMConfigured } from "../lib/llm-config.js";
 
+export const updatePost = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { postId } = req.params;
+    const { content } = req.body;
+
+    if (!content || content.trim() === "") {
+      return res.status(400).json({
+        message: "Content is required",
+      });
+    }
+
+    // Verify the post belongs to the user
+    const post = await prisma.generatedPost.findFirst({
+      where: {
+        id: postId,
+        userId,
+      },
+    });
+
+    if (!post) {
+      return res.status(404).json({
+        message: "Post not found or does not belong to you",
+      });
+    }
+
+    // Update the post content
+    const updatedPost = await prisma.generatedPost.update({
+      where: {
+        id: postId,
+      },
+      data: {
+        content: content.trim(),
+        updatedAt: new Date(),
+      },
+    });
+
+    res.json({
+      message: "Post updated successfully",
+      post: {
+        id: updatedPost.id,
+        content: updatedPost.content,
+        updatedAt: updatedPost.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Update post error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 /**
  * Get platform posts for a generated post
  * GET /platform/posts/:postId
@@ -52,7 +103,7 @@ export const getPlatformPosts = async (req, res) => {
 };
 
 /**
- * Generate platform adaptations for a post (ORCHESTRATED)
+ * Generate platform adaptations for a post
  * Regenerates platform posts for all enabled platforms
  * POST /platform/posts/:postId/generate
  */
@@ -81,11 +132,7 @@ export const generatePlatformPosts = async (req, res) => {
     }
 
     // Use orchestrated regeneration
-    const result = await regeneratePlatformPosts(
-      postId,
-      userId,
-      prisma
-    );
+    const result = await regeneratePlatformPosts(postId, userId, prisma);
 
     res.json({
       message: "Platform posts generated successfully",

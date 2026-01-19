@@ -12,6 +12,7 @@ import samplePostRoutes from "./routes/samplePost.js";
 import toneProfileRoutes from "./routes/toneProfile.js";
 import generationRoutes from "./routes/generation.js";
 import platformRoutes from './routes/platform.js';
+import feedbackRoutes from './routes/feedback.js'
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ app.use("/sample", samplePostRoutes);
 app.use("/tone", toneProfileRoutes);
 app.use("/generation", generationRoutes);
 app.use("/platform", platformRoutes);
+app.use("/feedback", feedbackRoutes);
 
 // health check
 app.get("/health", (req, res) => {
