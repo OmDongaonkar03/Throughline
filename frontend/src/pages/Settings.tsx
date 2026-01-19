@@ -5,7 +5,10 @@ import {
   CreditCard,
   ChevronRight,
   Check,
-  Share2
+  Share2,
+  Calendar,
+  Clock,
+  Info,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -21,11 +24,20 @@ import { cn } from "@/lib/utils";
 import { notificationService } from "@/services/notificationService";
 import { profileService } from "@/services/profileService";
 import { platformService } from "@/services/platformService";
+import { scheduleService } from "@/services/scheduleService";
 import { useNavigate } from "react-router-dom";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const settingsSections = [
   { id: "profile", label: "Profile", icon: User, description: "Your personal information" },
   { id: "platforms", label: "Platforms", icon: Share2, description: "Selected social platforms" },
+  { id: "schedule", label: "Schedule", icon: Calendar, description: "Post generation timing" },
   { id: "notifications", label: "Notifications", icon: Bell, description: "How we contact you" },
   { id: "billing", label: "Billing", icon: CreditCard, description: "Manage your subscription" },
 ];
@@ -48,6 +60,33 @@ const platformsConfig = [
   },
 ];
 
+const DAYS_OF_WEEK = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+];
+
+// Generate time options in 15-minute intervals
+const generateTimeOptions = () => {
+  const options = [];
+  for (let hour = 0; hour < 24; hour++) {
+    for (let minute = 0; minute < 60; minute += 15) {
+      const timeValue = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      const period = hour < 12 ? 'AM' : 'PM';
+      const displayTime = `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
+      options.push({ value: timeValue, label: displayTime });
+    }
+  }
+  return options;
+};
+
+const TIME_OPTIONS = generateTimeOptions();
+
 const Settings = () => {
   const [activeSection, setActiveSection] = useState("profile");
   const [notifications, setNotifications] = useState({
@@ -60,6 +99,17 @@ const Settings = () => {
     linkedinEnabled: true,
     redditEnabled: false,
   });
+  const [schedule, setSchedule] = useState({
+    dailyEnabled: true,
+    dailyTime: "21:00",
+    weeklyEnabled: true,
+    weeklyDay: 0,
+    weeklyTime: "20:00",
+    monthlyEnabled: true,
+    monthlyDay: 28,
+    monthlyTime: "20:00",
+    timezone: "Asia/Kolkata",
+  });
   const [profileData, setProfileData] = useState({
     name: "",
     email: "",
@@ -67,6 +117,7 @@ const Settings = () => {
   });
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
   const [isLoadingPlatforms, setIsLoadingPlatforms] = useState(false);
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const { toast } = useToast();
   const { apiRequest, user, logout } = useAuth();
@@ -81,7 +132,6 @@ const Settings = () => {
         bio: user.bio || "",
       });
       
-      // Check if user is verified
       if (user.verified === false) {
         toast({
           title: "Email Not Verified",
@@ -93,14 +143,10 @@ const Settings = () => {
     }
   }, [user, navigate, toast]);
 
-  // Fetch notification settings on mount
   useEffect(() => {
     fetchNotificationSettings();
-  }, []);
-
-  // Fetch platform settings on mount
-  useEffect(() => {
     fetchPlatformSettings();
+    fetchScheduleSettings();
   }, []);
 
   const fetchNotificationSettings = async () => {
@@ -113,13 +159,10 @@ const Settings = () => {
       });
     } catch (error) {
       console.error("Error fetching notification settings:", error);
-      
-      // Check if verification is needed
       if (error.message.includes("verify") || error.message.includes("Verification")) {
         navigate("/auth");
         return;
       }
-      
       toast({
         title: "Error",
         description: error.message || "Failed to load notification settings",
@@ -138,13 +181,10 @@ const Settings = () => {
       });
     } catch (error) {
       console.error("Error fetching platform settings:", error);
-      
-      // Check if verification is needed
       if (error.message.includes("verify") || error.message.includes("Verification")) {
         navigate("/auth");
         return;
       }
-      
       toast({
         title: "Error",
         description: error.message || "Failed to load platform settings",
@@ -153,8 +193,25 @@ const Settings = () => {
     }
   };
 
+  const fetchScheduleSettings = async () => {
+    try {
+      const settings = await scheduleService.getSettings(apiRequest);
+      setSchedule(settings);
+    } catch (error) {
+      console.error("Error fetching schedule settings:", error);
+      if (error.message.includes("verify") || error.message.includes("Verification")) {
+        navigate("/auth");
+        return;
+      }
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load schedule settings",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleNotificationToggle = async (key, value) => {
-    // Optimistic update
     const previousState = { ...notifications };
     setNotifications(prev => ({
       ...prev,
@@ -163,33 +220,25 @@ const Settings = () => {
 
     try {
       setIsLoadingNotifications(true);
-
       const updatedSettings = await notificationService.updateSettings(apiRequest, {
         [key]: value,
       });
-
-      // Update with server response to ensure consistency
       setNotifications({
         emailDigest: updatedSettings.emailDigest,
         postReminders: updatedSettings.postReminders,
         weeklyReport: updatedSettings.weeklyReport,
       });
-
       toast({
         title: "Success",
         description: "Notification preferences updated",
       });
     } catch (error) {
-      // Revert to previous state on error
       setNotifications(previousState);
       console.error("Error updating notification settings:", error);
-      
-      // Check if verification is needed
       if (error.message.includes("verify") || error.message.includes("Verification")) {
         navigate("/auth");
         return;
       }
-      
       toast({
         title: "Error",
         description: error.message || "Failed to update notification settings",
@@ -201,16 +250,12 @@ const Settings = () => {
   };
 
   const handlePlatformToggle = async (key, value) => {
-    // Check if disabling would leave no platforms enabled
     if (!value) {
-      // Only check when disabling (value = false)
       const updatedPlatforms = {
         ...platforms,
         [key]: value
       };
-      
       const enabledCount = Object.values(updatedPlatforms).filter(Boolean).length;
-      
       if (enabledCount === 0) {
         toast({
           title: "Cannot disable all platforms",
@@ -221,43 +266,33 @@ const Settings = () => {
       }
     }
 
-    // Optimistic update
     const previousState = { ...platforms };
-    const updatedPlatforms = {
-      ...platforms,
+    setPlatforms(prev => ({
+      ...prev,
       [key]: value
-    };
-    setPlatforms(updatedPlatforms);
+    }));
 
     try {
       setIsLoadingPlatforms(true);
-
       const updatedSettings = await platformService.updateSettings(apiRequest, {
         [key]: value,
       });
-
-      // Update with server response to ensure consistency
       setPlatforms({
         xEnabled: updatedSettings.xEnabled,
         linkedinEnabled: updatedSettings.linkedinEnabled,
         redditEnabled: updatedSettings.redditEnabled,
       });
-
       toast({
         title: "Success",
         description: "Platform settings updated",
       });
     } catch (error) {
-      // Revert to previous state on error
       setPlatforms(previousState);
       console.error("Error updating platform settings:", error);
-      
-      // Check if verification is needed
       if (error.message.includes("verify") || error.message.includes("Verification")) {
         navigate("/auth");
         return;
       }
-      
       toast({
         title: "Error",
         description: error.message || "Failed to update platform settings",
@@ -265,6 +300,92 @@ const Settings = () => {
       });
     } finally {
       setIsLoadingPlatforms(false);
+    }
+  };
+
+  const handleScheduleToggle = async (key, value) => {
+    // Check if disabling would leave no schedules enabled
+    if (!value) {
+      const updatedSchedule = {
+        ...schedule,
+        [key]: value
+      };
+      const enabledCount = [
+        updatedSchedule.dailyEnabled,
+        updatedSchedule.weeklyEnabled,
+        updatedSchedule.monthlyEnabled,
+      ].filter(Boolean).length;
+      
+      if (enabledCount === 0) {
+        toast({
+          title: "Cannot disable all schedules",
+          description: "At least one schedule type must be enabled",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    const previousState = { ...schedule };
+    setSchedule(prev => ({
+      ...prev,
+      [key]: value
+    }));
+
+    try {
+      setIsLoadingSchedule(true);
+      const updatedSettings = await scheduleService.updateSettings(apiRequest, {
+        [key]: value,
+      });
+      setSchedule(updatedSettings);
+      toast({
+        title: "Success",
+        description: "Schedule settings updated",
+      });
+    } catch (error) {
+      setSchedule(previousState);
+      console.error("Error updating schedule settings:", error);
+      if (error.message.includes("verify") || error.message.includes("Verification")) {
+        navigate("/auth");
+        return;
+      }
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update schedule settings",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingSchedule(false);
+    }
+  };
+
+  const handleScheduleChange = async (key, value) => {
+    const previousState = { ...schedule };
+    setSchedule(prev => ({
+      ...prev,
+      [key]: value
+    }));
+
+    try {
+      setIsLoadingSchedule(true);
+      const updatedSettings = await scheduleService.updateSettings(apiRequest, {
+        [key]: value,
+      });
+      setSchedule(updatedSettings);
+      toast({
+        title: "Success",
+        description: "Schedule settings updated",
+      });
+    } catch (error) {
+      setSchedule(previousState);
+      console.error("Error updating schedule settings:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update schedule settings",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingSchedule(false);
     }
   };
 
@@ -281,20 +402,16 @@ const Settings = () => {
 
     try {
       const result = await profileService.updateProfile(apiRequest, profileData);
-
       toast({
         title: "Success",
         description: result.message || "Profile updated successfully",
       });
 
-      // If email was changed, user will be logged out
       if (result.emailChanged && result.loggedOut) {
         toast({
           title: "Email Changed",
           description: "Please check your email to verify your new address. Logging out...",
         });
-        
-        // Wait a moment for user to see the message, then logout
         setTimeout(() => {
           logout();
           navigate("/auth");
@@ -320,7 +437,6 @@ const Settings = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl font-medium text-foreground mb-1">Settings</h1>
             <p className="text-muted-foreground text-sm">Manage your account preferences</p>
@@ -465,6 +581,200 @@ const Settings = () => {
                           />
                         </div>
                       ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {activeSection === "schedule" && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2 }}
+                    className="space-y-6"
+                  >
+                    <CardHeader className="p-0">
+                      <CardTitle className="text-base">Schedule Settings</CardTitle>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Configure when posts should be automatically generated
+                      </p>
+                    </CardHeader>
+
+                    {/* Info Banner */}
+                    <div className="flex gap-2 p-3 rounded-md bg-blue-500/10 border border-blue-500/20">
+                      <p className="text-xs text-muted-foreground">
+                        Post generation timing may vary by a few minutes to optimize server load. 
+                        Timezone: {schedule.timezone}
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {/* Daily Schedule */}
+                      <div className="p-4 rounded-md bg-secondary/50 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Clock className="w-4 h-4 text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Daily Posts</p>
+                              <p className="text-xs text-muted-foreground">Generate posts every day</p>
+                            </div>
+                          </div>
+                          <Switch
+                            checked={schedule.dailyEnabled}
+                            onCheckedChange={(checked) => 
+                              handleScheduleToggle("dailyEnabled", checked)
+                            }
+                            disabled={isLoadingSchedule}
+                          />
+                        </div>
+                        {schedule.dailyEnabled && (
+                          <div className="ml-7 grid gap-2">
+                            <Label htmlFor="dailyTime">Time</Label>
+                            <Select 
+                              value={schedule.dailyTime}
+                              onValueChange={(value) => handleScheduleChange("dailyTime", value)}
+                              disabled={isLoadingSchedule}
+                            >
+                              <SelectTrigger id="dailyTime">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-60">
+                                {TIME_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Weekly Schedule */}
+                      <div className="p-4 rounded-md bg-secondary/50 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Calendar className="w-4 h-4 text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Weekly Posts</p>
+                              <p className="text-xs text-muted-foreground">Generate summary posts weekly</p>
+                            </div>
+                          </div>
+                          <Switch
+                            checked={schedule.weeklyEnabled}
+                            onCheckedChange={(checked) => 
+                              handleScheduleToggle("weeklyEnabled", checked)
+                            }
+                            disabled={isLoadingSchedule}
+                          />
+                        </div>
+                        {schedule.weeklyEnabled && (
+                          <div className="ml-7 grid gap-3">
+                            <div className="grid gap-2">
+                              <Label htmlFor="weeklyDay">Day</Label>
+                              <Select 
+                                value={schedule.weeklyDay.toString()}
+                                onValueChange={(value) => handleScheduleChange("weeklyDay", parseInt(value))}
+                                disabled={isLoadingSchedule}
+                              >
+                                <SelectTrigger id="weeklyDay">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {DAYS_OF_WEEK.map((day) => (
+                                    <SelectItem key={day.value} value={day.value.toString()}>
+                                      {day.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="weeklyTime">Time</Label>
+                              <Select 
+                                value={schedule.weeklyTime}
+                                onValueChange={(value) => handleScheduleChange("weeklyTime", value)}
+                                disabled={isLoadingSchedule}
+                              >
+                                <SelectTrigger id="weeklyTime">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-60">
+                                  {TIME_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Monthly Schedule */}
+                      <div className="p-4 rounded-md bg-secondary/50 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Calendar className="w-4 h-4 text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Monthly Posts</p>
+                              <p className="text-xs text-muted-foreground">Generate monthly summary posts</p>
+                            </div>
+                          </div>
+                          <Switch
+                            checked={schedule.monthlyEnabled}
+                            onCheckedChange={(checked) => 
+                              handleScheduleToggle("monthlyEnabled", checked)
+                            }
+                            disabled={isLoadingSchedule}
+                          />
+                        </div>
+                        {schedule.monthlyEnabled && (
+                          <div className="ml-7 grid gap-3">
+                            <div className="grid gap-2">
+                              <Label htmlFor="monthlyDay">Day of Month</Label>
+                              <Select 
+                                value={schedule.monthlyDay.toString()}
+                                onValueChange={(value) => handleScheduleChange("monthlyDay", parseInt(value))}
+                                disabled={isLoadingSchedule}
+                              >
+                                <SelectTrigger id="monthlyDay">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-60">
+                                  {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                                    <SelectItem key={day} value={day.toString()}>
+                                      {day}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-xs text-muted-foreground">
+                                Day 1-28 of each month
+                              </p>
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="monthlyTime">Time</Label>
+                              <Select 
+                                value={schedule.monthlyTime}
+                                onValueChange={(value) => handleScheduleChange("monthlyTime", value)}
+                                disabled={isLoadingSchedule}
+                              >
+                                <SelectTrigger id="monthlyTime">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-60">
+                                  {TIME_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 )}
