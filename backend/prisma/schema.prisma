@@ -25,6 +25,7 @@ model User {
   toneProfile          ToneProfile?
   generationSchedule   GenerationSchedule?
   generationJobs       GenerationJob[]
+  postFeedback         PostFeedback[]
   platformSettings     UserPlatformSettings?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
@@ -267,4 +268,20 @@ enum JobStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+model PostFeedback {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    String
+  
+  rating    Int      // 1 = thumbs down, 2 = thumbs up
+  issue     String?
+  
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([postId])
+  @@index([userId, postId])
 }

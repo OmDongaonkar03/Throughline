@@ -99,7 +99,32 @@ export const postsService = {
   },
 
   /**
-   * Update a platform post content
+   * Update a base post content (manual edit)
+   * @param {Function} apiRequest - The authenticated API request function from AuthContext
+   * @param {string} postId - The base post ID
+   * @param {string} content - Updated content
+   * @returns {Promise<Object>} Updated post
+   */
+  updatePost: async (apiRequest, postId, content) => {
+    const response = await apiRequest(`${API_URL}/platform/posts/base/${postId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ content }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.message || "Failed to update post");
+    }
+
+    return result;
+  },
+
+  /**
+   * Update a platform post content (manual edit)
    * @param {Function} apiRequest - The authenticated API request function from AuthContext
    * @param {string} platformPostId - The platform post ID
    * @param {string} content - Updated content
@@ -107,7 +132,7 @@ export const postsService = {
    */
   updatePlatformPost: async (apiRequest, platformPostId, content) => {
     const response = await apiRequest(
-      `${API_URL}/platform/posts/${platformPostId}`,
+      `${API_URL}/platform/posts/platform/${platformPostId}`,
       {
         method: "PUT",
         headers: {
@@ -124,5 +149,48 @@ export const postsService = {
     }
 
     return result;
+  },
+
+  /**
+   * Submit feedback for a post (thumbs up/down)
+   * @param {Function} apiRequest - The authenticated API request function from AuthContext
+   * @param {string} postId - The post ID
+   * @param {number} rating - 1 = thumbs down, 2 = thumbs up
+   * @param {string} issue - Optional issue type
+   * @returns {Promise<Object>} Feedback response
+   */
+  submitFeedback: async (apiRequest, postId, rating, issue = null) => {
+    const response = await apiRequest(`${API_URL}/feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ postId, rating, issue }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.message || "Failed to submit feedback");
+    }
+
+    return result;
+  },
+
+  /**
+   * Get feedback for a post
+   * @param {Function} apiRequest - The authenticated API request function from AuthContext
+   * @param {string} postId - The post ID
+   * @returns {Promise<Object>} Feedback data
+   */
+  getFeedback: async (apiRequest, postId) => {
+    const response = await apiRequest(`${API_URL}/feedback/${postId}`);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to fetch feedback");
+    }
+
+    return await response.json();
   },
 };

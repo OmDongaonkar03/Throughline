@@ -9,6 +9,7 @@ import {
   generatePlatformPosts,
   updatePlatformPost,
   getPlatformPostsByDate,
+  updatePost, // Import the base post update function
 } from "../controllers/platformPosts.controller.js";
 
 const router = express.Router();
@@ -23,7 +24,13 @@ router.put("/settings", updatePlatformSettings);
 // Platform Posts Routes
 router.get("/posts/:postId", getPlatformPosts);
 router.post("/posts/:postId/generate", generatePlatformPosts);
-router.put("/posts/:platformPostId", updatePlatformPost);
+
+// Base Post Update Route
+router.put("/posts/base/:postId", updatePost);
+
+// Platform Post Update Route
+router.put("/posts/platform/:platformPostId", updatePlatformPost);
+
 router.get("/posts/date/:date", getPlatformPostsByDate);
 
 export default router;

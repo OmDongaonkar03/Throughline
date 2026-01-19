@@ -8,6 +8,9 @@ import {
   RefreshCw,
   Calendar,
   Loader2,
+  ThumbsUp,
+  ThumbsDown,
+  Edit,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -15,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -61,6 +65,16 @@ const Posts = () => {
   const [generateType, setGenerateType] = useState("daily");
   const [selectedDate, setSelectedDate] = useState("");
   
+  // Feedback state
+  const [postFeedback, setPostFeedback] = useState<Record<string, any>>({});
+  
+  // Edit state
+  const [editingPost, setEditingPost] = useState<any>(null);
+  const [editContent, setEditContent] = useState("");
+  const [editingPlatformPost, setEditingPlatformPost] = useState<any>(null);
+  const [editPlatformContent, setEditPlatformContent] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  
   const { toast } = useToast();
   const { apiRequest } = useAuth();
 
@@ -74,6 +88,23 @@ const Posts = () => {
       const params = selectedTab === "all" ? {} : { type: selectedTab.toUpperCase() };
       const data = await postsService.getPosts(apiRequest, params);
       setPosts(data.posts || []);
+      
+      // Load feedback for all posts
+      const feedbackPromises = (data.posts || []).map(async (post: any) => {
+        try {
+          const feedbackData = await postsService.getFeedback(apiRequest, post.id);
+          return { postId: post.id, feedback: feedbackData.feedback };
+        } catch (error) {
+          return { postId: post.id, feedback: null };
+        }
+      });
+      
+      const feedbackResults = await Promise.all(feedbackPromises);
+      const feedbackMap: Record<string, any> = {};
+      feedbackResults.forEach((result) => {
+        feedbackMap[result.postId] = result.feedback;
+      });
+      setPostFeedback(feedbackMap);
     } catch (error) {
       console.error("Error fetching posts:", error);
       toast({
@@ -169,6 +200,114 @@ const Posts = () => {
     }
   };
 
+  // Feedback handlers
+  const handleFeedback = async (postId: string, rating: number) => {
+    try {
+      await postsService.submitFeedback(apiRequest, postId, rating);
+      
+      setPostFeedback(prev => ({
+        ...prev,
+        [postId]: { rating }
+      }));
+      
+      toast({
+        title: rating === 2 ? "Thanks!" : "Feedback received",
+        description: rating === 2 
+          ? "Glad you liked it!" 
+          : "We'll work on improving this.",
+      });
+    } catch (error) {
+      console.error("Error submitting feedback:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit feedback",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Edit handlers
+  const handleEditBasePost = (post: any) => {
+    setEditingPost(post);
+    setEditContent(post.content);
+  };
+
+  const handleSaveBasePost = async () => {
+    if (!editingPost) return;
+    
+    try {
+      setIsSaving(true);
+      await postsService.updatePost(apiRequest, editingPost.id, editContent);
+      
+      // Update local state
+      setPosts(prev => prev.map(p => 
+        p.id === editingPost.id 
+          ? { ...p, content: editContent }
+          : p
+      ));
+      
+      setEditingPost(null);
+      
+      toast({
+        title: "Post updated",
+        description: "Your changes have been saved.",
+      });
+    } catch (error) {
+      console.error("Error updating post:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update post",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditPlatformPost = (platformPost: any) => {
+    setEditingPlatformPost(platformPost);
+    setEditPlatformContent(platformPost.content);
+  };
+
+  const handleSavePlatformPost = async () => {
+    if (!editingPlatformPost) return;
+    
+    try {
+      setIsSaving(true);
+      await postsService.updatePlatformPost(
+        apiRequest, 
+        editingPlatformPost.id, 
+        editPlatformContent
+      );
+      
+      // Update local state
+      setPosts(prev => prev.map(p => ({
+        ...p,
+        platformPosts: p.platformPosts?.map(pp =>
+          pp.id === editingPlatformPost.id
+            ? { ...pp, content: editPlatformContent }
+            : pp
+        )
+      })));
+      
+      setEditingPlatformPost(null);
+      
+      toast({
+        title: "Platform post updated",
+        description: "Your changes have been saved.",
+      });
+    } catch (error) {
+      console.error("Error updating platform post:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update platform post",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -186,85 +325,68 @@ const Posts = () => {
 
   return (
     <AppLayout>
-      <div className="p-6 lg:p-8 pt-16 lg:pt-8">
+      <div className="p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-2xl font-medium text-foreground mb-1">Posts</h1>
-              <p className="text-muted-foreground text-sm">Generate and manage your content</p>
-            </div>
-            <Button className="gap-2" onClick={() => setShowGenerateModal(true)}>
+          <div className="mb-6 sm:mb-8">
+            <h1 className="text-2xl font-medium text-foreground mb-1">Posts</h1>
+            <p className="text-muted-foreground text-sm">Generate and manage your content</p>
+          </div>
+
+          {/* Tabs and Generate Button */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full sm:w-auto">
+              <TabsList className="grid w-full grid-cols-4 sm:w-auto">
+                <TabsTrigger value="all">All</TabsTrigger>
+                <TabsTrigger value="daily">Daily</TabsTrigger>
+                <TabsTrigger value="weekly">Weekly</TabsTrigger>
+                <TabsTrigger value="monthly">Monthly</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button className="gap-2 w-full sm:w-auto" onClick={() => setShowGenerateModal(true)}>
               <FileText className="w-4 h-4" />
               Generate Post
             </Button>
           </div>
 
-          {/* Tabs */}
-          <Tabs value={selectedTab} onValueChange={setSelectedTab} className="mb-6">
-            <TabsList>
-              <TabsTrigger value="all">All Posts</TabsTrigger>
-              <TabsTrigger value="daily">Daily</TabsTrigger>
-              <TabsTrigger value="weekly">Weekly</TabsTrigger>
-              <TabsTrigger value="monthly">Monthly</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          {/* Loading State */}
-          {isLoading && (
+          {/* Posts List */}
+          {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="text-center space-y-2">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
-                <p className="text-sm text-muted-foreground">Loading posts...</p>
-              </div>
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
-          )}
-
-          {/* Empty State */}
-          {!isLoading && posts.length === 0 && (
-            <div className="text-center py-12">
-              <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                No posts yet
-              </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Generate your first post to get started
-              </p>
-              <Button onClick={() => setShowGenerateModal(true)} className="gap-2">
-                <FileText className="w-4 h-4" />
-                Generate Your First Post
-              </Button>
-            </div>
-          )}
-
-          {/* Posts Grid */}
-          {!isLoading && posts.length > 0 && (
+          ) : posts.length === 0 ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center">
+                  <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No posts yet. Generate your first post!</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
             <div className="space-y-4">
               <AnimatePresence>
-                {posts.map((post, index) => (
+                {posts.map((post) => (
                   <motion.div
                     key={post.id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    transition={{ delay: index * 0.05 }}
+                    transition={{ duration: 0.2 }}
                   >
-                    <Card className="hover:border-border/80 transition-colors">
-                      <CardContent className="p-5">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Clock className="w-3 h-3 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">
-                                {formatDate(post.createdAt)}
-                              </span>
-                              <Badge variant="default" className="text-xs">
-                                {post.type.toLowerCase()}
-                              </Badge>
+                    <Card>
+                      <CardContent className="p-4 sm:p-6">
+                        {/* Header - Responsive */}
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-0 mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                              <FileText className="w-5 h-5 text-primary" />
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
                               {post.generationType && (
                                 <Badge variant="outline" className="text-xs">
                                   {post.generationType}
@@ -273,6 +395,15 @@ const Posts = () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditBasePost(post)}
+                              className="gap-2"
+                            >
+                              <Edit className="w-4 h-4" />
+                              <span className="hidden sm:inline">Edit</span>
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -285,7 +416,7 @@ const Posts = () => {
                               ) : (
                                 <RefreshCw className="w-4 h-4" />
                               )}
-                              Regenerate
+                              <span className="hidden sm:inline">Regenerate</span>
                             </Button>
                           </div>
                         </div>
@@ -295,6 +426,36 @@ const Posts = () => {
                           <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
                             {post.content}
                           </p>
+                        </div>
+
+                        {/* Timestamp - Bottom Right */}
+                        <div className="flex items-center justify-end mb-4">
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Clock className="w-3 h-3" />
+                            <span>{formatDate(post.createdAt)}</span>
+                          </div>
+                        </div>
+
+                        {/* Feedback Buttons */}
+                        <div className="flex gap-2 mb-4 pb-4 border-b border-border">
+                          <Button
+                            size="sm"
+                            variant={postFeedback[post.id]?.rating === 2 ? "default" : "outline"}
+                            onClick={() => handleFeedback(post.id, 2)}
+                            className="gap-2"
+                          >
+                            <ThumbsUp className="w-4 h-4" />
+                            <span className="hidden sm:inline">{postFeedback[post.id]?.rating === 2 && "Liked"}</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={postFeedback[post.id]?.rating === 1 ? "destructive" : "outline"}
+                            onClick={() => handleFeedback(post.id, 1)}
+                            className="gap-2"
+                          >
+                            <ThumbsDown className="w-4 h-4" />
+                            <span className="hidden sm:inline">{postFeedback[post.id]?.rating === 1 && "Disliked"}</span>
+                          </Button>
                         </div>
 
                         {/* Platform Posts Toggle */}
@@ -330,17 +491,28 @@ const Posts = () => {
                                         key={pp.id}
                                         className="border border-border rounded-lg p-4 bg-muted/30"
                                       >
-                                        <div className="flex items-center gap-3 mb-3">
-                                          <div className={`w-8 h-8 rounded-md flex items-center justify-center ${platformConfig.color}`}>
-                                            <img 
-                                              src={platformConfig.logo} 
-                                              alt={platformConfig.name}
-                                              className="w-4 h-4"
-                                            />
+                                        <div className="flex items-center justify-between mb-3">
+                                          <div className="flex items-center gap-3">
+                                            <div className={`w-8 h-8 rounded-md flex items-center justify-center ${platformConfig.color}`}>
+                                              <img 
+                                                src={platformConfig.logo} 
+                                                alt={platformConfig.name}
+                                                className="w-4 h-4"
+                                              />
+                                            </div>
+                                            <span className={`text-sm font-medium ${platformConfig.textColor}`}>
+                                              {platformConfig.name}
+                                            </span>
                                           </div>
-                                          <span className={`text-sm font-medium ${platformConfig.textColor}`}>
-                                            {platformConfig.name}
-                                          </span>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleEditPlatformPost(pp)}
+                                            className="gap-2"
+                                          >
+                                            <Edit className="w-3 h-3" />
+                                            <span className="hidden sm:inline">Edit</span>
+                                          </Button>
                                         </div>
                                         <p className="text-sm text-foreground whitespace-pre-line mb-2">
                                           {pp.content}
@@ -460,6 +632,88 @@ const Posts = () => {
                   <FileText className="w-4 h-4" />
                   Generate
                 </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Base Post Dialog */}
+      <Dialog open={!!editingPost} onOpenChange={() => setEditingPost(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Base Post</DialogTitle>
+            <DialogDescription>
+              Make changes to your post content
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            rows={12}
+            className="font-mono text-sm"
+          />
+          <div className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setEditingPost(null)}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveBasePost}
+              disabled={isSaving}
+              className="gap-2"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Platform Post Dialog */}
+      <Dialog open={!!editingPlatformPost} onOpenChange={() => setEditingPlatformPost(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Platform Post</DialogTitle>
+            <DialogDescription>
+              {editingPlatformPost && PLATFORM_CONFIG[editingPlatformPost.platform]?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={editPlatformContent}
+            onChange={(e) => setEditPlatformContent(e.target.value)}
+            rows={12}
+            className="font-mono text-sm"
+          />
+          <div className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setEditingPlatformPost(null)}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSavePlatformPost}
+              disabled={isSaving}
+              className="gap-2"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
               )}
             </Button>
           </div>
