@@ -3,10 +3,6 @@ import { getModelString } from "../../lib/llm-config.js";
 import { startOfMonth, endOfMonth, formatDate } from "../../lib/time.js";
 import { buildCompleteToneProfile, generateToneGuidance } from "../../lib/tone-profile-builder.js";
 
-/**
- * Create Monthly Post Generator Agent
- * Synthesizes weekly narratives into strategic monthly reflection in the user's authentic voice
- */
 export function createMonthlyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
   const toneGuidance = generateToneGuidance(completeTone);
@@ -95,9 +91,6 @@ NEXT_FOCUS: [what this month sets up or enables]`,
   return new Agent(agentConfig);
 }
 
-/**
- * Generate monthly post from weekly narratives
- */
 export async function generateMonthlyPost(
   userId,
   targetDate,
@@ -107,7 +100,6 @@ export async function generateMonthlyPost(
   const monthStart = startOfMonth(targetDate);
   const monthEnd = endOfMonth(targetDate);
 
-  // 1. Get weekly posts for the month
   const weeklyPosts = await prisma.generatedPost.findMany({
     where: {
       userId,
@@ -127,12 +119,10 @@ export async function generateMonthlyPost(
     throw new Error("No weekly posts found for this month");
   }
 
-  // 2. Get user's tone profile
   const toneProfile = await prisma.toneProfile.findUnique({
     where: { userId },
   });
 
-  // 3. Generate monthly narrative
   const agent = createMonthlyGeneratorAgent(toneProfile);
 
   const weeklyNarratives = weeklyPosts
@@ -171,7 +161,6 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
     const response = await agent.generate(prompt);
     const fullText = response.text.trim();
 
-    // Parse the response
     const parts = fullText.split(/THEMES:|ACHIEVEMENTS:|SHIFTS:|MOMENTUM:|NEXT_FOCUS:/);
     const narrative = parts[0].trim();
     const themes =
@@ -212,42 +201,41 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
       generatedAt: new Date().toISOString(),
     };
 
-    // 4. Mark previous monthly posts as not latest
-    await prisma.generatedPost.updateMany({
-      where: {
-        userId,
-        type: "MONTHLY",
-        date: monthStart,
-        isLatest: true,
-      },
-      data: {
-        isLatest: false,
-      },
-    });
+    const generatedPost = await prisma.$transaction(async (tx) => {
+      await tx.generatedPost.updateMany({
+        where: {
+          userId,
+          type: "MONTHLY",
+          date: monthStart,
+          isLatest: true,
+        },
+        data: {
+          isLatest: false,
+        },
+      });
 
-    // 5. Get version number
-    const previousVersions = await prisma.generatedPost.count({
-      where: {
-        userId,
-        type: "MONTHLY",
-        date: monthStart,
-      },
-    });
+      const previousVersions = await tx.generatedPost.count({
+        where: {
+          userId,
+          type: "MONTHLY",
+          date: monthStart,
+        },
+      });
 
-    // 6. Save the generated post
-    const generatedPost = await prisma.generatedPost.create({
-      data: {
-        userId,
-        type: "MONTHLY",
-        date: monthStart,
-        content: narrative,
-        metadata,
-        toneProfileId: toneProfile?.id,
-        version: previousVersions + 1,
-        isLatest: true,
-        generationType: isManual ? "MANUAL" : "AUTO",
-        modelUsed: getModelString(),
-      },
+      return await tx.generatedPost.create({
+        data: {
+          userId,
+          type: "MONTHLY",
+          date: monthStart,
+          content: narrative,
+          metadata,
+          toneProfileId: toneProfile?.id,
+          version: previousVersions + 1,
+          isLatest: true,
+          generationType: isManual ? "MANUAL" : "AUTO",
+          modelUsed: getModelString(),
+        },
+      });
     });
 
     return generatedPost;
@@ -257,14 +245,9 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
   }
 }
 
-/**
- * Get or generate monthly post
- * Returns existing post if found, generates new one if not
- */
 export async function getOrGenerateMonthlyPost(userId, targetDate, prisma) {
   const monthStart = startOfMonth(targetDate);
 
-  // Try to get existing post
   const existingPost = await prisma.generatedPost.findFirst({
     where: {
       userId,
@@ -278,6 +261,5 @@ export async function getOrGenerateMonthlyPost(userId, targetDate, prisma) {
     return existingPost;
   }
 
-  // Generate new post
   return await generateMonthlyPost(userId, targetDate, prisma, false);
 }

@@ -2,10 +2,6 @@ import { Agent } from "@mastra/core/agent";
 import { z } from "zod";
 import { getModelString } from "../../lib/llm-config.js";
 
-/**
- * Tone Profile Schema
- * Defines the structure of extracted tone profile
- */
 const toneProfileSchema = z.object({
   voice: z
     .string()
@@ -27,10 +23,6 @@ const toneProfileSchema = z.object({
     .describe("3-5 representative sentences that perfectly capture how this person writes"),
 });
 
-/**
- * Create Tone Extractor Agent
- * Analyzes sample posts to extract user's writing style
- */
 export function createToneExtractorAgent() {
   const agentConfig = {
     name: "tone-extractor",
@@ -87,9 +79,6 @@ Your output will be used by other AI agents to generate content in this exact vo
   return new Agent(agentConfig);
 }
 
-/**
- * Extract tone profile from sample posts
- */
 export async function extractToneProfile(samplePosts) {
   if (!samplePosts || samplePosts.length === 0) {
     throw new Error("At least one sample post is required for tone extraction");
@@ -97,7 +86,6 @@ export async function extractToneProfile(samplePosts) {
 
   const agent = createToneExtractorAgent();
 
-  // Combine sample posts with separators
   const samplesText = samplePosts
     .map((post, idx) => `=== SAMPLE ${idx + 1} ===\n${post}`)
     .join("\n\n");
@@ -124,7 +112,7 @@ Be specific and actionable. This profile will be used to generate new content th
 
     return {
       ...response.object,
-      exampleText: samplesText, // Store original samples for reference
+      exampleText: samplesText,
     };
   } catch (error) {
     console.error("Tone extraction error:", error);
@@ -132,11 +120,7 @@ Be specific and actionable. This profile will be used to generate new content th
   }
 }
 
-/**
- * Get tone profile from database or extract if not exists
- */
 export async function getToneProfile(userId, prisma) {
-  // Check if tone profile exists
   let toneProfile = await prisma.toneProfile.findUnique({
     where: { userId },
   });
@@ -145,23 +129,20 @@ export async function getToneProfile(userId, prisma) {
     return toneProfile;
   }
 
-  // If not, extract from sample posts
   const samplePosts = await prisma.samplePost.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
-    take: 5, // Use up to 5 sample posts
+    take: 5,
   });
 
   if (samplePosts.length === 0) {
     throw new Error("No sample posts found. Please add sample posts first.");
   }
 
-  // Extract tone
   const extractedProfile = await extractToneProfile(
     samplePosts.map((post) => post.content)
   );
 
-  // Save to database
   toneProfile = await prisma.toneProfile.create({
     data: {
       userId,
@@ -179,9 +160,6 @@ export async function getToneProfile(userId, prisma) {
   return toneProfile;
 }
 
-/**
- * Update tone profile when sample posts change
- */
 export async function updateToneProfile(userId, prisma) {
   const samplePosts = await prisma.samplePost.findMany({
     where: { userId },
@@ -197,23 +175,24 @@ export async function updateToneProfile(userId, prisma) {
     samplePosts.map((post) => post.content)
   );
 
-  // Delete old profile and create new one
-  await prisma.toneProfile.deleteMany({
-    where: { userId },
-  });
+  const toneProfile = await prisma.$transaction(async (tx) => {
+    await tx.toneProfile.deleteMany({
+      where: { userId },
+    });
 
-  const toneProfile = await prisma.toneProfile.create({
-    data: {
-      userId,
-      voice: extractedProfile.voice,
-      sentenceStyle: extractedProfile.sentenceStyle,
-      emotionalRange: extractedProfile.emotionalRange,
-      commonPhrases: extractedProfile.commonPhrases,
-      exampleText: extractedProfile.exampleText,
-      fullProfile: extractedProfile,
-      modelUsed: getModelString(),
-      extractedAt: new Date(),
-    },
+    return await tx.toneProfile.create({
+      data: {
+        userId,
+        voice: extractedProfile.voice,
+        sentenceStyle: extractedProfile.sentenceStyle,
+        emotionalRange: extractedProfile.emotionalRange,
+        commonPhrases: extractedProfile.commonPhrases,
+        exampleText: extractedProfile.exampleText,
+        fullProfile: extractedProfile,
+        modelUsed: getModelString(),
+        extractedAt: new Date(),
+      },
+    });
   });
 
   return toneProfile;

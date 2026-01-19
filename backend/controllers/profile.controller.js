@@ -4,16 +4,13 @@ import { generateVerificationToken, verifyVerificationToken } from "../utils/jwt
 import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
 
-// Helper function to send verification email
 const sendVerificationEmail = async (user, newEmail = null) => {
   const emailToVerify = newEmail || user.email;
   const verificationToken = generateVerificationToken(user.id, emailToVerify);
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
   
-  // Create hash of token for storage
   const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
 
-  // Check rate limit - max 3 verification emails per day
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
@@ -30,18 +27,16 @@ const sendVerificationEmail = async (user, newEmail = null) => {
     throw new Error("Maximum verification emails sent for today. Please try again tomorrow.");
   }
 
-  // Invalidate all previous unused tokens for this user
   await prisma.verificationToken.updateMany({
     where: {
       userId: user.id,
       used: false,
     },
     data: {
-      used: true, // Mark as used to invalidate
+      used: true,
     },
   });
 
-  // Store verification token in database with hash
   await prisma.verificationToken.create({
     data: {
       token: verificationToken,
@@ -53,17 +48,14 @@ const sendVerificationEmail = async (user, newEmail = null) => {
     },
   });
 
-  // Generate verification link
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
   const verificationLink = `${frontendUrl}/verify-email?token=${verificationToken}`;
 
-  // Get email template
   const emailContent = verificationEmailTemplate({
     name: user.name,
     verificationLink,
   });
 
-  // Send email
   await sendMail({
     to: emailToVerify,
     subject: emailContent.subject,
@@ -77,7 +69,6 @@ export const updateProfileData = async (req, res) => {
     const userId = req.user.id;
     const { name, bio, email } = req.body;
 
-    // Get current user data
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { email: true, name: true, bio: true },
@@ -87,10 +78,8 @@ export const updateProfileData = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Check if email is being changed
     const emailChanged = email && email !== currentUser.email;
 
-    // If email is being changed, check if new email already exists
     if (emailChanged) {
       const existingUser = await prisma.user.findUnique({
         where: { email },
@@ -101,7 +90,6 @@ export const updateProfileData = async (req, res) => {
       }
     }
 
-    // Prepare update data
     const updateData = {
       updatedAt: new Date(),
     };
@@ -110,37 +98,36 @@ export const updateProfileData = async (req, res) => {
     if (bio !== undefined) updateData.bio = bio;
     if (emailChanged) {
       updateData.email = email;
-      updateData.verified = false; // Set verified to false when email changes
+      updateData.verified = false;
     }
 
-    // Update user
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        bio: true,
-        profilePhoto: true,
-        verified: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    // If email changed, invalidate all refresh tokens and send verification email
     if (emailChanged) {
-      // Delete all refresh tokens to log user out
-      await prisma.refreshToken.deleteMany({
-        where: { userId },
+      const updatedUser = await prisma.$transaction(async (tx) => {
+        const user = await tx.user.update({
+          where: { id: userId },
+          data: updateData,
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            bio: true,
+            profilePhoto: true,
+            verified: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+
+        await tx.refreshToken.deleteMany({
+          where: { userId },
+        });
+
+        return user;
       });
 
-      // Send verification email
       try {
         await sendVerificationEmail(updatedUser);
         
-        // Clear the refresh token cookie
         res.clearCookie("refreshToken", {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
@@ -163,6 +150,21 @@ export const updateProfileData = async (req, res) => {
         });
       }
     }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        bio: true,
+        profilePhoto: true,
+        verified: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
     res.json({
       message: "Profile updated successfully",
@@ -219,17 +221,14 @@ export const verifyUser = async (req, res) => {
       return res.status(400).json({ message: "Verification token is required" });
     }
 
-    // Verify the JWT token
     const decoded = verifyVerificationToken(token);
     
     if (!decoded || decoded.type !== "verification") {
       return res.status(400).json({ message: "Invalid verification token" });
     }
 
-    // Create hash of the token to look it up in database
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-    // Check if token exists in database and is not used
     const storedToken = await prisma.verificationToken.findUnique({
       where: { tokenHash },
     });
@@ -242,36 +241,36 @@ export const verifyUser = async (req, res) => {
       return res.status(400).json({ message: "Verification token already used" });
     }
 
-    // Check if token has expired
     if (new Date() > storedToken.expiresAt) {
       return res.status(400).json({ message: "Verification token has expired" });
     }
 
-    // Verify that the token matches the user
     if (storedToken.userId !== decoded.userId) {
       return res.status(400).json({ message: "Invalid verification token" });
     }
 
-    // Update user as verified and update email if it was changed
-    const updatedUser = await prisma.user.update({
-      where: { id: decoded.userId },
-      data: {
-        verified: true,
-        email: decoded.email, // Update to the email in the token (handles email changes)
-        updatedAt: new Date(),
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        verified: true,
-      },
-    });
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: decoded.userId },
+        data: {
+          verified: true,
+          email: decoded.email,
+          updatedAt: new Date(),
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          verified: true,
+        },
+      });
 
-    // Mark token as used
-    await prisma.verificationToken.update({
-      where: { tokenHash },
-      data: { used: true },
+      await tx.verificationToken.update({
+        where: { tokenHash },
+        data: { used: true },
+      });
+
+      return user;
     });
 
     res.json({ 

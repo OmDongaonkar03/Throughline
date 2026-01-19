@@ -3,10 +3,6 @@ import { getModelString } from "../../lib/llm-config.js";
 import { startOfWeek, endOfWeek, formatDate } from "../../lib/time.js";
 import { buildCompleteToneProfile, generateToneGuidance } from "../../lib/tone-profile-builder.js";
 
-/**
- * Create Weekly Post Generator Agent
- * Synthesizes daily narratives into weekly insights in the user's authentic voice
- */
 export function createWeeklyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
   const toneGuidance = generateToneGuidance(completeTone);
@@ -91,9 +87,6 @@ EVOLUTION: [brief description of what changed or evolved]`,
   return new Agent(agentConfig);
 }
 
-/**
- * Generate weekly post from daily narratives
- */
 export async function generateWeeklyPost(
   userId,
   targetDate,
@@ -103,7 +96,6 @@ export async function generateWeeklyPost(
   const weekStart = startOfWeek(targetDate);
   const weekEnd = endOfWeek(targetDate);
 
-  // 1. Get daily posts for the week
   const dailyPosts = await prisma.generatedPost.findMany({
     where: {
       userId,
@@ -123,12 +115,10 @@ export async function generateWeeklyPost(
     throw new Error("No daily posts found for this week");
   }
 
-  // 2. Get user's tone profile
   const toneProfile = await prisma.toneProfile.findUnique({
     where: { userId },
   });
 
-  // 3. Generate weekly narrative
   const agent = createWeeklyGeneratorAgent(toneProfile);
 
   const dailyNarratives = dailyPosts
@@ -160,7 +150,6 @@ Your task: Find the pattern or thread that connects these days. Show what the we
     const response = await agent.generate(prompt);
     const fullText = response.text.trim();
 
-    // Parse the response
     const parts = fullText.split(/THEMES:|HIGHLIGHTS:|PATTERNS:|EVOLUTION:/);
     const narrative = parts[0].trim();
     const themes =
@@ -179,7 +168,7 @@ Your task: Find the pattern or thread that connects these days. Show what the we
       parts[3]
         ?.trim()
         .split(",")
-        .map((p) => p.trim())
+        .map((p) => t.trim())
         .filter(Boolean) || [];
     const evolution = parts[4]?.trim() || "";
 
@@ -194,42 +183,41 @@ Your task: Find the pattern or thread that connects these days. Show what the we
       generatedAt: new Date().toISOString(),
     };
 
-    // 4. Mark previous weekly posts as not latest
-    await prisma.generatedPost.updateMany({
-      where: {
-        userId,
-        type: "WEEKLY",
-        date: weekStart,
-        isLatest: true,
-      },
-      data: {
-        isLatest: false,
-      },
-    });
+    const generatedPost = await prisma.$transaction(async (tx) => {
+      await tx.generatedPost.updateMany({
+        where: {
+          userId,
+          type: "WEEKLY",
+          date: weekStart,
+          isLatest: true,
+        },
+        data: {
+          isLatest: false,
+        },
+      });
 
-    // 5. Get version number
-    const previousVersions = await prisma.generatedPost.count({
-      where: {
-        userId,
-        type: "WEEKLY",
-        date: weekStart,
-      },
-    });
+      const previousVersions = await tx.generatedPost.count({
+        where: {
+          userId,
+          type: "WEEKLY",
+          date: weekStart,
+        },
+      });
 
-    // 6. Save the generated post
-    const generatedPost = await prisma.generatedPost.create({
-      data: {
-        userId,
-        type: "WEEKLY",
-        date: weekStart,
-        content: narrative,
-        metadata,
-        toneProfileId: toneProfile?.id,
-        version: previousVersions + 1,
-        isLatest: true,
-        generationType: isManual ? "MANUAL" : "AUTO",
-        modelUsed: getModelString(),
-      },
+      return await tx.generatedPost.create({
+        data: {
+          userId,
+          type: "WEEKLY",
+          date: weekStart,
+          content: narrative,
+          metadata,
+          toneProfileId: toneProfile?.id,
+          version: previousVersions + 1,
+          isLatest: true,
+          generationType: isManual ? "MANUAL" : "AUTO",
+          modelUsed: getModelString(),
+        },
+      });
     });
 
     return generatedPost;
@@ -239,14 +227,9 @@ Your task: Find the pattern or thread that connects these days. Show what the we
   }
 }
 
-/**
- * Get or generate weekly post
- * Returns existing post if found, generates new one if not
- */
 export async function getOrGenerateWeeklyPost(userId, targetDate, prisma) {
   const weekStart = startOfWeek(targetDate);
 
-  // Try to get existing post
   const existingPost = await prisma.generatedPost.findFirst({
     where: {
       userId,
@@ -260,6 +243,5 @@ export async function getOrGenerateWeeklyPost(userId, targetDate, prisma) {
     return existingPost;
   }
 
-  // Generate new post
   return await generateWeeklyPost(userId, targetDate, prisma, false);
 }

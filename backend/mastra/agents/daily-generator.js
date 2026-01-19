@@ -3,10 +3,6 @@ import { getModelString } from "../../lib/llm-config.js";
 import { startOfDay, endOfDay, formatDate } from "../../lib/time.js";
 import { buildCompleteToneProfile, generateToneGuidance } from "../../lib/tone-profile-builder.js";
 
-/**
- * Create Daily Post Generator Agent
- * Transforms raw check-ins into elevated narratives in the user's authentic voice
- */
 export function createDailyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
   const toneGuidance = generateToneGuidance(completeTone);
@@ -90,9 +86,6 @@ INSIGHTS: [comma-separated insights that weren't explicitly stated but are impli
   return new Agent(agentConfig);
 }
 
-/**
- * Generate daily post from check-ins
- */
 export async function generateDailyPost(
   userId,
   targetDate,
@@ -102,7 +95,6 @@ export async function generateDailyPost(
   const startDate = startOfDay(targetDate);
   const endDate = endOfDay(targetDate);
 
-  // 1. Get check-ins for the day
   const checkIns = await prisma.checkIn.findMany({
     where: {
       userId,
@@ -120,12 +112,10 @@ export async function generateDailyPost(
     throw new Error("No check-ins found for this date");
   }
 
-  // 2. Get user's tone profile
   const toneProfile = await prisma.toneProfile.findUnique({
     where: { userId },
   });
 
-  // 3. Generate base narrative
   const agent = createDailyGeneratorAgent(toneProfile);
 
   const checkInsText = checkIns
@@ -151,7 +141,6 @@ Your task: Take these scattered thoughts and create a coherent narrative in the 
     const response = await agent.generate(prompt);
     const fullText = response.text.trim();
 
-    // Parse the response
     const parts = fullText.split(/THEMES:|HIGHLIGHTS:|INSIGHTS:/);
     const narrative = parts[0].trim();
     const themes =
@@ -181,42 +170,41 @@ Your task: Take these scattered thoughts and create a coherent narrative in the 
       generatedAt: new Date().toISOString(),
     };
 
-    // 4. Mark previous posts as not latest
-    await prisma.generatedPost.updateMany({
-      where: {
-        userId,
-        type: "DAILY",
-        date: startDate,
-        isLatest: true,
-      },
-      data: {
-        isLatest: false,
-      },
-    });
+    const generatedPost = await prisma.$transaction(async (tx) => {
+      await tx.generatedPost.updateMany({
+        where: {
+          userId,
+          type: "DAILY",
+          date: startDate,
+          isLatest: true,
+        },
+        data: {
+          isLatest: false,
+        },
+      });
 
-    // 5. Get version number
-    const previousVersions = await prisma.generatedPost.count({
-      where: {
-        userId,
-        type: "DAILY",
-        date: startDate,
-      },
-    });
+      const previousVersions = await tx.generatedPost.count({
+        where: {
+          userId,
+          type: "DAILY",
+          date: startDate,
+        },
+      });
 
-    // 6. Save the generated post
-    const generatedPost = await prisma.generatedPost.create({
-      data: {
-        userId,
-        type: "DAILY",
-        date: startDate,
-        content: narrative,
-        metadata,
-        toneProfileId: toneProfile?.id,
-        version: previousVersions + 1,
-        isLatest: true,
-        generationType: isManual ? "MANUAL" : "AUTO",
-        modelUsed: getModelString(),
-      },
+      return await tx.generatedPost.create({
+        data: {
+          userId,
+          type: "DAILY",
+          date: startDate,
+          content: narrative,
+          metadata,
+          toneProfileId: toneProfile?.id,
+          version: previousVersions + 1,
+          isLatest: true,
+          generationType: isManual ? "MANUAL" : "AUTO",
+          modelUsed: getModelString(),
+        },
+      });
     });
 
     return generatedPost;
@@ -226,14 +214,9 @@ Your task: Take these scattered thoughts and create a coherent narrative in the 
   }
 }
 
-/**
- * Get or generate daily post
- * Returns existing post if found, generates new one if not
- */
 export async function getOrGenerateDailyPost(userId, targetDate, prisma) {
   const startDate = startOfDay(targetDate);
 
-  // Try to get existing post
   const existingPost = await prisma.generatedPost.findFirst({
     where: {
       userId,
@@ -247,6 +230,5 @@ export async function getOrGenerateDailyPost(userId, targetDate, prisma) {
     return existingPost;
   }
 
-  // Generate new post
   return await generateDailyPost(userId, targetDate, prisma, false);
 }
