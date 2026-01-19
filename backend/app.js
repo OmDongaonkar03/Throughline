@@ -15,6 +15,8 @@ import platformRoutes from './routes/platform.js';
 import feedbackRoutes from './routes/feedback.js'
 import scheduleRoutes from './routes/schedule.js';
 
+import { globalLimiter, authLimiter, llmLimiter } from './middleware/rateLimiter.js';
+
 dotenv.config();
 
 const app = express();
@@ -22,7 +24,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(
   cors({
-    origin: ["http://localhost:8080"], // your frontend URL
+    origin: ["http://localhost:8080"],
     credentials: true,
   })
 );
@@ -32,7 +34,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
-// routes
+app.use(globalLimiter);
+
+app.use("/auth/login", authLimiter);
+app.use("/auth/signup", authLimiter);
+app.use("/auth/google/callback", authLimiter);
+
+app.use("/generation", llmLimiter);
+app.use("/tone/extract", llmLimiter);
+
 app.use("/auth", authRoutes);
 app.use("/checkin", checkinRoutes);
 app.use("/notifications", notificationRoutes);
@@ -44,7 +54,6 @@ app.use("/platform", platformRoutes);
 app.use("/feedback", feedbackRoutes);
 app.use("/schedule", scheduleRoutes);
 
-// health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
