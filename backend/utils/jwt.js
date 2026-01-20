@@ -1,11 +1,11 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET =
-  process.env.JWT_REFRESH_SECRET || "your-refresh-secret-key";
+  process.env.JWT_REFRESH_SECRET;
 const JWT_VERIFICATION_SECRET =
-  process.env.JWT_VERIFICATION_SECRET || "your-verification-secret-key";
+  process.env.JWT_VERIFICATION_SECRET;
 
 // generate access token (short-lived: 15min)
 export const generateAccessToken = (userId) => {

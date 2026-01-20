@@ -1,8 +1,16 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import cookieParser from "cookie-parser";
 import logger from "morgan";
 import cors from "cors";
-import dotenv from "dotenv";
+import * as Sentry from "@sentry/node";
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV || "development",
+});
 
 import authRoutes from "./routes/auth.js";
 import checkinRoutes from "./routes/checkin.js";
@@ -11,24 +19,26 @@ import profileRoutes from "./routes/profile.js";
 import samplePostRoutes from "./routes/samplePost.js";
 import toneProfileRoutes from "./routes/toneProfile.js";
 import generationRoutes from "./routes/generation.js";
-import platformRoutes from './routes/platform.js';
-import feedbackRoutes from './routes/feedback.js'
-import scheduleRoutes from './routes/schedule.js';
+import platformRoutes from "./routes/platform.js";
+import feedbackRoutes from "./routes/feedback.js";
+import scheduleRoutes from "./routes/schedule.js";
 
-import { globalLimiter, authLimiter, llmLimiter } from './middleware/rateLimiter.js';
-import { requestId } from './middleware/requestId.js';
-import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
-
-dotenv.config();
+import {
+  globalLimiter,
+  authLimiter,
+  llmLimiter,
+} from "./middleware/rateLimiter.js";
+import { requestId } from "./middleware/requestId.js";
+import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(
   cors({
-    origin: ["http://localhost:8080"],
+    origin: process.env.ALLOWED_ORIGINS?.split(","),
     credentials: true,
-  })
+  }),
 );
 
 app.use(requestId);
@@ -63,5 +73,8 @@ app.get("/health", (req, res) => {
 
 app.use(notFoundHandler);
 app.use(errorHandler);
+
+// Sentry v8+ integration
+Sentry.setupExpressErrorHandler(app);
 
 export default app;
