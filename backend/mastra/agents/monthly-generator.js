@@ -1,8 +1,16 @@
 import { Agent } from "@mastra/core/agent";
 import { getModelString } from "../../lib/llm-config.js";
 import { startOfMonth, endOfMonth, formatDate } from "../../lib/time.js";
-import { buildCompleteToneProfile, generateToneGuidance } from "../../lib/tone-profile-builder.js";
+import {
+  buildCompleteToneProfile,
+  generateToneGuidance,
+} from "../../lib/tone-profile-builder.js";
 import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
+import {
+  NotFoundError,
+  LLMError,
+  DatabaseError,
+} from "../../utils/errors.js";
 
 export function createMonthlyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
@@ -96,33 +104,43 @@ export async function generateMonthlyPost(
   userId,
   targetDate,
   prisma,
-  isManual = false
+  isManual = false,
 ) {
   const monthStart = startOfMonth(targetDate);
   const monthEnd = endOfMonth(targetDate);
 
-  const weeklyPosts = await prisma.generatedPost.findMany({
-    where: {
-      userId,
-      type: "WEEKLY",
-      date: {
-        gte: monthStart,
-        lte: monthEnd,
+  let weeklyPosts;
+  try {
+    weeklyPosts = await prisma.generatedPost.findMany({
+      where: {
+        userId,
+        type: "WEEKLY",
+        date: {
+          gte: monthStart,
+          lte: monthEnd,
+        },
+        isLatest: true,
       },
-      isLatest: true,
-    },
-    orderBy: {
-      date: "asc",
-    },
-  });
-
-  if (weeklyPosts.length === 0) {
-    throw new Error("No weekly posts found for this month");
+      orderBy: {
+        date: "asc",
+      },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch weekly posts: ${error.message}`);
   }
 
-  const toneProfile = await prisma.toneProfile.findUnique({
-    where: { userId },
-  });
+  if (weeklyPosts.length === 0) {
+    throw new NotFoundError("No weekly posts found for this month");
+  }
+
+  let toneProfile;
+  try {
+    toneProfile = await prisma.toneProfile.findUnique({
+      where: { userId },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch tone profile: ${error.message}`);
+  }
 
   const agent = createMonthlyGeneratorAgent(toneProfile);
 
@@ -160,15 +178,14 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
 
   try {
     const response = await retryWithBackoff(async () => {
-      return await withTimeout(
-        agent.generate(prompt),
-        60000
-      );
+      return await withTimeout(agent.generate(prompt), 60000);
     });
-    
+
     const fullText = response.text.trim();
 
-    const parts = fullText.split(/THEMES:|ACHIEVEMENTS:|SHIFTS:|MOMENTUM:|NEXT_FOCUS:/);
+    const parts = fullText.split(
+      /THEMES:|ACHIEVEMENTS:|SHIFTS:|MOMENTUM:|NEXT_FOCUS:/,
+    );
     const narrative = parts[0].trim();
     const themes =
       parts[1]
@@ -208,61 +225,78 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
       generatedAt: new Date().toISOString(),
     };
 
-    const generatedPost = await prisma.$transaction(async (tx) => {
-      await tx.generatedPost.updateMany({
-        where: {
-          userId,
-          type: "MONTHLY",
-          date: monthStart,
-          isLatest: true,
-        },
-        data: {
-          isLatest: false,
-        },
-      });
+    let generatedPost;
+    try {
+      generatedPost = await prisma.$transaction(async (tx) => {
+        await tx.generatedPost.updateMany({
+          where: {
+            userId,
+            type: "MONTHLY",
+            date: monthStart,
+            isLatest: true,
+          },
+          data: {
+            isLatest: false,
+          },
+        });
 
-      const previousVersions = await tx.generatedPost.count({
-        where: {
-          userId,
-          type: "MONTHLY",
-          date: monthStart,
-        },
-      });
+        const previousVersions = await tx.generatedPost.count({
+          where: {
+            userId,
+            type: "MONTHLY",
+            date: monthStart,
+          },
+        });
 
-      return await tx.generatedPost.create({
-        data: {
-          userId,
-          type: "MONTHLY",
-          date: monthStart,
-          content: narrative,
-          metadata,
-          toneProfileId: toneProfile?.id,
-          version: previousVersions + 1,
-          isLatest: true,
-          generationType: isManual ? "MANUAL" : "AUTO",
-          modelUsed: getModelString(),
-        },
+        return await tx.generatedPost.create({
+          data: {
+            userId,
+            type: "MONTHLY",
+            date: monthStart,
+            content: narrative,
+            metadata,
+            toneProfileId: toneProfile?.id,
+            version: previousVersions + 1,
+            isLatest: true,
+            generationType: isManual ? "MANUAL" : "AUTO",
+            modelUsed: getModelString(),
+          },
+        });
       });
-    });
+    } catch (error) {
+      throw new DatabaseError(
+        `Failed to save generated post: ${error.message}`,
+      );
+    }
 
     return generatedPost;
   } catch (error) {
+    if (error instanceof DatabaseError || error instanceof NotFoundError) {
+      throw error;
+    }
     console.error("Monthly generation error:", error);
-    throw new Error(`Failed to generate monthly post: ${error.message}`);
+    throw new LLMError(`Failed to generate monthly post: ${error.message}`);
   }
 }
 
 export async function getOrGenerateMonthlyPost(userId, targetDate, prisma) {
   const monthStart = startOfMonth(targetDate);
 
-  const existingPost = await prisma.generatedPost.findFirst({
-    where: {
-      userId,
-      type: "MONTHLY",
-      date: monthStart,
-      isLatest: true,
-    },
-  });
+  let existingPost;
+  try {
+    existingPost = await prisma.generatedPost.findFirst({
+      where: {
+        userId,
+        type: "MONTHLY",
+        date: monthStart,
+        isLatest: true,
+      },
+    });
+  } catch (error) {
+    throw new DatabaseError(
+      `Failed to check for existing post: ${error.message}`,
+    );
+  }
 
   if (existingPost) {
     return existingPost;

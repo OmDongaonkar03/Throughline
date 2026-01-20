@@ -3,6 +3,7 @@ import { getModelString } from "../../lib/llm-config.js";
 import { getPlatformSpec } from "../../lib/platform-specs.js";
 import { buildCompleteToneProfile } from "../../lib/tone-profile-builder.js";
 import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
+import { LLMError } from "../../utils/errors.js";
 
 export function createPlatformAdapterAgent() {
   const agentConfig = {
@@ -27,7 +28,7 @@ export async function adaptForPlatform(
   baseContent,
   metadata,
   platform,
-  toneProfile
+  toneProfile,
 ) {
   const spec = getPlatformSpec(platform);
   const agent = createPlatformAdapterAgent();
@@ -69,9 +70,11 @@ USER PREFERENCES:`;
 
     if (completeTone.preferredLength) {
       const lengthMap = {
-        concise: "Keep it tight - aim for the shorter end of the platform limit",
+        concise:
+          "Keep it tight - aim for the shorter end of the platform limit",
         moderate: "Use moderate length - find the sweet spot",
-        detailed: "Use more space - develop ideas more fully within platform limits",
+        detailed:
+          "Use more space - develop ideas more fully within platform limits",
       };
       preferenceGuidance += `
 - Length: ${lengthMap[completeTone.preferredLength] || completeTone.preferredLength}`;
@@ -115,12 +118,9 @@ Return ONLY the adapted post content, nothing else. No preamble, no explanation,
 
   try {
     const response = await retryWithBackoff(async () => {
-      return await withTimeout(
-        agent.generate(prompt),
-        60000
-      );
+      return await withTimeout(agent.generate(prompt), 60000);
     });
-    
+
     let content = response.text.trim();
 
     content = content.replace(/```\n?/g, "").trim();
@@ -135,7 +135,7 @@ Return ONLY the adapted post content, nothing else. No preamble, no explanation,
     if (completeTone && !completeTone.includeEmojis) {
       content = content.replace(
         /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu,
-        ""
+        "",
       );
       content = content.replace(/\s+/g, " ").trim();
     }
@@ -147,7 +147,7 @@ Return ONLY the adapted post content, nothing else. No preamble, no explanation,
     };
   } catch (error) {
     console.error(`Platform adaptation error (${platform}):`, error);
-    throw new Error(`Failed to adapt for ${platform}: ${error.message}`);
+    throw new LLMError(`Failed to adapt for ${platform}: ${error.message}`);
   }
 }
 

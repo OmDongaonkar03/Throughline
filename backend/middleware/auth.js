@@ -1,24 +1,38 @@
 import { verifyAccessToken } from "../utils/jwt.js";
 import prisma from "../db/prisma.js";
+import { asyncHandler } from "./asyncHandler.js";
+import {
+  AuthenticationError,
+  AuthorizationError,
+  DatabaseError,
+} from "../utils/errors.js";
 
-// protect routes that need authentication
-export const authenticate = async (req, res, next) => {
+/**
+ * Protect routes that require authentication
+ * Verifies JWT token and attaches user to request
+ */
+export const authenticate = asyncHandler(async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new AuthenticationError("No token provided");
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  if (!token) {
+    throw new AuthenticationError("Malformed token");
+  }
+
+  const decoded = verifyAccessToken(token);
+
+  if (!decoded) {
+    throw new AuthenticationError("Invalid or expired token");
+  }
+
+  let user;
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "No token provided" });
-    }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = verifyAccessToken(token);
-
-    if (!decoded) {
-      return res.status(401).json({ message: "Invalid or expired token" });
-    }
-
-    // attach user to request
-    const user = await prisma.user.findUnique({
+    user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: {
         id: true,
@@ -29,23 +43,20 @@ export const authenticate = async (req, res, next) => {
         updatedAt: true,
       },
     });
-
-    if (!user) {
-      return res.status(401).json({ message: "User not found" });
-    }
-
-    // Check if user is verified
-    if (!user.verified) {
-      return res.status(403).json({ 
-        message: "Email not verified. Please check your email for verification link.",
-        verified: false
-      });
-    }
-
-    req.user = user;
-    next();
   } catch (error) {
-    console.error("Auth middleware error:", error);
-    res.status(401).json({ message: "Authentication failed" });
+    throw new DatabaseError(`Failed to fetch user: ${error.message}`);
   }
-};
+
+  if (!user) {
+    throw new AuthenticationError("User not found");
+  }
+
+  if (!user.verified) {
+    throw new AuthorizationError(
+      "Email not verified. Please check your email for verification link.",
+    );
+  }
+
+  req.user = user;
+  next();
+});

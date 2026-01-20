@@ -3,6 +3,13 @@ import crypto from "crypto";
 import { generateVerificationToken, verifyVerificationToken } from "../utils/jwt.js";
 import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
+import {
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  RateLimitError,
+} from "../utils/errors.js";
 
 const sendVerificationEmail = async (user, newEmail = null) => {
   const emailToVerify = newEmail || user.email;
@@ -24,7 +31,9 @@ const sendVerificationEmail = async (user, newEmail = null) => {
   });
 
   if (tokensSentToday >= 3) {
-    throw new Error("Maximum verification emails sent for today. Please try again tomorrow.");
+    throw new RateLimitError(
+      "Maximum verification emails sent for today. Please try again tomorrow."
+    );
   }
 
   await prisma.verificationToken.updateMany({
@@ -64,222 +73,197 @@ const sendVerificationEmail = async (user, newEmail = null) => {
   });
 };
 
-export const updateProfileData = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { name, bio, email } = req.body;
+export const updateProfileData = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { name, bio, email } = req.body;
 
-    const currentUser = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true, bio: true },
-    });
+  const currentUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true, name: true, bio: true },
+  });
 
-    if (!currentUser) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const emailChanged = email && email !== currentUser.email;
-
-    if (emailChanged) {
-      const existingUser = await prisma.user.findUnique({
-        where: { email },
-      });
-
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already in use" });
-      }
-    }
-
-    const updateData = {
-      updatedAt: new Date(),
-    };
-
-    if (name !== undefined) updateData.name = name;
-    if (bio !== undefined) updateData.bio = bio;
-    if (emailChanged) {
-      updateData.email = email;
-      updateData.verified = false;
-    }
-
-    if (emailChanged) {
-      const updatedUser = await prisma.$transaction(async (tx) => {
-        const user = await tx.user.update({
-          where: { id: userId },
-          data: updateData,
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            bio: true,
-            profilePhoto: true,
-            verified: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        });
-
-        await tx.refreshToken.deleteMany({
-          where: { userId },
-        });
-
-        return user;
-      });
-
-      try {
-        await sendVerificationEmail(updatedUser);
-        
-        res.clearCookie("refreshToken", {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
-        });
-
-        return res.json({
-          message: "Profile updated. Email changed - please verify your new email address. You have been logged out.",
-          user: updatedUser,
-          emailChanged: true,
-          verificationSent: true,
-          loggedOut: true,
-        });
-      } catch (emailError) {
-        console.error("Failed to send verification email:", emailError);
-        return res.status(500).json({ 
-          message: "Profile updated but failed to send verification email. Please contact support.",
-          user: updatedUser,
-          emailChanged: true,
-        });
-      }
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        bio: true,
-        profilePhoto: true,
-        verified: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    res.json({
-      message: "Profile updated successfully",
-      user: updatedUser,
-    });
-  } catch (error) {
-    console.error("Update profile data error:", error);
-    res.status(500).json({ message: "Server error" });
+  if (!currentUser) {
+    throw new NotFoundError("User not found");
   }
-};
 
-export const sendVerificationMail = async (req, res) => {
-  try {
-    const userId = req.user.id;
+  const emailChanged = email && email !== currentUser.email;
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, email: true, name: true, verified: true },
+  if (emailChanged) {
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
     });
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    if (existingUser) {
+      throw new ConflictError("Email already in use");
     }
-
-    if (user.verified) {
-      return res.status(400).json({ message: "Email already verified" });
-    }
-
-    try {
-      await sendVerificationEmail(user);
-      res.json({ 
-        message: "Verification email sent successfully",
-        verificationSent: true,
-      });
-    } catch (emailError) {
-      if (emailError.message.includes("Maximum verification emails")) {
-        return res.status(429).json({ 
-          message: emailError.message,
-        });
-      }
-      throw emailError;
-    }
-  } catch (error) {
-    console.error("Send verification mail error:", error);
-    res.status(500).json({ message: "Server error" });
   }
-};
 
-export const verifyUser = async (req, res) => {
-  try {
-    const { token } = req.params;
+  const updateData = {
+    updatedAt: new Date(),
+  };
 
-    if (!token) {
-      return res.status(400).json({ message: "Verification token is required" });
-    }
+  if (name !== undefined) updateData.name = name;
+  if (bio !== undefined) updateData.bio = bio;
+  if (emailChanged) {
+    updateData.email = email;
+    updateData.verified = false;
+  }
 
-    const decoded = verifyVerificationToken(token);
-    
-    if (!decoded || decoded.type !== "verification") {
-      return res.status(400).json({ message: "Invalid verification token" });
-    }
-
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-
-    const storedToken = await prisma.verificationToken.findUnique({
-      where: { tokenHash },
-    });
-
-    if (!storedToken) {
-      return res.status(400).json({ message: "Verification token not found" });
-    }
-
-    if (storedToken.used) {
-      return res.status(400).json({ message: "Verification token already used" });
-    }
-
-    if (new Date() > storedToken.expiresAt) {
-      return res.status(400).json({ message: "Verification token has expired" });
-    }
-
-    if (storedToken.userId !== decoded.userId) {
-      return res.status(400).json({ message: "Invalid verification token" });
-    }
-
+  if (emailChanged) {
     const updatedUser = await prisma.$transaction(async (tx) => {
       const user = await tx.user.update({
-        where: { id: decoded.userId },
-        data: {
-          verified: true,
-          email: decoded.email,
-          updatedAt: new Date(),
-        },
+        where: { id: userId },
+        data: updateData,
         select: {
           id: true,
           email: true,
           name: true,
+          bio: true,
+          profilePhoto: true,
           verified: true,
+          createdAt: true,
+          updatedAt: true,
         },
       });
 
-      await tx.verificationToken.update({
-        where: { tokenHash },
-        data: { used: true },
+      await tx.refreshToken.deleteMany({
+        where: { userId },
       });
 
       return user;
     });
 
-    res.json({ 
-      message: "Email verified successfully",
-      user: updatedUser,
-      verified: true,
-    });
-  } catch (error) {
-    console.error("Verify user error:", error);
-    res.status(500).json({ message: "Server error" });
+    try {
+      await sendVerificationEmail(updatedUser);
+      
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+      });
+
+      return res.json({
+        message: "Profile updated. Email changed - please verify your new email address. You have been logged out.",
+        user: updatedUser,
+        emailChanged: true,
+        verificationSent: true,
+        loggedOut: true,
+      });
+    } catch (emailError) {
+      console.error("Failed to send verification email:", emailError);
+      throw new Error(
+        "Profile updated but failed to send verification email. Please contact support."
+      );
+    }
   }
-};
+
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: updateData,
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      bio: true,
+      profilePhoto: true,
+      verified: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  res.json({
+    message: "Profile updated successfully",
+    user: updatedUser,
+  });
+});
+
+export const sendVerificationMail = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true, verified: true },
+  });
+
+  if (!user) {
+    throw new NotFoundError("User not found");
+  }
+
+  if (user.verified) {
+    throw new ValidationError("Email already verified");
+  }
+
+  await sendVerificationEmail(user);
+  
+  res.json({ 
+    message: "Verification email sent successfully",
+    verificationSent: true,
+  });
+});
+
+export const verifyUser = asyncHandler(async (req, res) => {
+  const { token } = req.params;
+
+  if (!token) {
+    throw new ValidationError("Verification token is required");
+  }
+
+  const decoded = verifyVerificationToken(token);
+  
+  if (!decoded || decoded.type !== "verification") {
+    throw new ValidationError("Invalid verification token");
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const storedToken = await prisma.verificationToken.findUnique({
+    where: { tokenHash },
+  });
+
+  if (!storedToken) {
+    throw new NotFoundError("Verification token not found");
+  }
+
+  if (storedToken.used) {
+    throw new ValidationError("Verification token already used");
+  }
+
+  if (new Date() > storedToken.expiresAt) {
+    throw new ValidationError("Verification token has expired");
+  }
+
+  if (storedToken.userId !== decoded.userId) {
+    throw new ValidationError("Invalid verification token");
+  }
+
+  const updatedUser = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.update({
+      where: { id: decoded.userId },
+      data: {
+        verified: true,
+        email: decoded.email,
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        verified: true,
+      },
+    });
+
+    await tx.verificationToken.update({
+      where: { tokenHash },
+      data: { used: true },
+    });
+
+    return user;
+  });
+
+  res.json({ 
+    message: "Email verified successfully",
+    user: updatedUser,
+    verified: true,
+  });
+});

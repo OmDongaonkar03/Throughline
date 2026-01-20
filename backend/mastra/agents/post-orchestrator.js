@@ -3,25 +3,43 @@ import { generateWeeklyPost } from "./weekly-generator.js";
 import { generateMonthlyPost } from "./monthly-generator.js";
 import { adaptForPlatform } from "./platform-adapter.js";
 import { getEnabledPlatforms } from "../../lib/platform-specs.js";
+import {
+  NotFoundError,
+  AuthorizationError,
+  ValidationError,
+  DatabaseError,
+} from "../../utils/errors.js";
 
 export async function generatePlatformPosts(basePost, userId, prisma) {
-  const platformSettings = await prisma.userPlatformSettings.findUnique({
-    where: { userId },
-  });
+  let platformSettings;
+  try {
+    platformSettings = await prisma.userPlatformSettings.findUnique({
+      where: { userId },
+    });
+  } catch (error) {
+    throw new DatabaseError(
+      `Failed to fetch platform settings: ${error.message}`,
+    );
+  }
 
   if (!platformSettings) {
-    throw new Error("User platform settings not found");
+    throw new NotFoundError("User platform settings not found");
   }
 
   const platforms = getEnabledPlatforms(platformSettings);
 
   if (platforms.length === 0) {
-    throw new Error("No platforms enabled");
+    throw new ValidationError("No platforms enabled");
   }
 
-  const toneProfile = await prisma.toneProfile.findUnique({
-    where: { userId },
-  });
+  let toneProfile;
+  try {
+    toneProfile = await prisma.toneProfile.findUnique({
+      where: { userId },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch tone profile: ${error.message}`);
+  }
 
   const platformPosts = [];
   const errors = [];
@@ -32,7 +50,7 @@ export async function generatePlatformPosts(basePost, userId, prisma) {
         basePost.content,
         basePost.metadata,
         platform,
-        toneProfile
+        toneProfile,
       );
 
       const platformPost = await prisma.platformPost.create({
@@ -64,13 +82,13 @@ export async function generateCompleteDailyPosts(
   userId,
   targetDate,
   prisma,
-  isManual = false
+  isManual = false,
 ) {
   const basePost = await generateDailyPost(
     userId,
     targetDate,
     prisma,
-    isManual
+    isManual,
   );
 
   const platformResult = await generatePlatformPosts(basePost, userId, prisma);
@@ -85,13 +103,13 @@ export async function generateCompleteWeeklyPosts(
   userId,
   targetDate,
   prisma,
-  isManual = false
+  isManual = false,
 ) {
   const basePost = await generateWeeklyPost(
     userId,
     targetDate,
     prisma,
-    isManual
+    isManual,
   );
 
   const platformResult = await generatePlatformPosts(basePost, userId, prisma);
@@ -106,13 +124,13 @@ export async function generateCompleteMonthlyPosts(
   userId,
   targetDate,
   prisma,
-  isManual = false
+  isManual = false,
 ) {
   const basePost = await generateMonthlyPost(
     userId,
     targetDate,
     prisma,
-    isManual
+    isManual,
   );
 
   const platformResult = await generatePlatformPosts(basePost, userId, prisma);
@@ -124,23 +142,35 @@ export async function generateCompleteMonthlyPosts(
 }
 
 async function generateNewPlatformPosts(basePost, userId, prisma) {
-  const platformSettings = await prisma.userPlatformSettings.findUnique({
-    where: { userId },
-  });
+  let platformSettings;
+  try {
+    platformSettings = await prisma.userPlatformSettings.findUnique({
+      where: { userId },
+    });
+  } catch (error) {
+    throw new DatabaseError(
+      `Failed to fetch platform settings: ${error.message}`,
+    );
+  }
 
   if (!platformSettings) {
-    throw new Error("User platform settings not found");
+    throw new NotFoundError("User platform settings not found");
   }
 
   const platforms = getEnabledPlatforms(platformSettings);
-  
+
   if (platforms.length === 0) {
-    throw new Error("No platforms enabled");
+    throw new ValidationError("No platforms enabled");
   }
 
-  const toneProfile = await prisma.toneProfile.findUnique({
-    where: { userId },
-  });
+  let toneProfile;
+  try {
+    toneProfile = await prisma.toneProfile.findUnique({
+      where: { userId },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch tone profile: ${error.message}`);
+  }
 
   const platformPosts = [];
   const errors = [];
@@ -151,7 +181,7 @@ async function generateNewPlatformPosts(basePost, userId, prisma) {
         basePost.content,
         basePost.metadata,
         platform,
-        toneProfile
+        toneProfile,
       );
 
       platformPosts.push({
@@ -166,51 +196,63 @@ async function generateNewPlatformPosts(basePost, userId, prisma) {
   }
 
   if (platformPosts.length === 0) {
-    throw new Error("Failed to generate any platform posts");
+    throw new ValidationError("Failed to generate any platform posts");
   }
 
   return { platformPosts, errors };
 }
 
 export async function regeneratePlatformPosts(basePostId, userId, prisma) {
-  const basePost = await prisma.generatedPost.findUnique({
-    where: { id: basePostId },
-  });
+  let basePost;
+  try {
+    basePost = await prisma.generatedPost.findUnique({
+      where: { id: basePostId },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch base post: ${error.message}`);
+  }
 
   if (!basePost) {
-    throw new Error("Base post not found");
+    throw new NotFoundError("Base post not found");
   }
 
   if (basePost.userId !== userId) {
-    throw new Error("Unauthorized: Post belongs to different user");
+    throw new AuthorizationError(
+      "Unauthorized: Post belongs to different user",
+    );
   }
 
   const { platformPosts: newPosts, errors } = await generateNewPlatformPosts(
     basePost,
     userId,
-    prisma
+    prisma,
   );
 
-  const savedPosts = await prisma.$transaction(async (tx) => {
-    await tx.platformPost.deleteMany({
-      where: { postId: basePostId },
-    });
-
-    const created = [];
-    for (const post of newPosts) {
-      const platformPost = await tx.platformPost.create({
-        data: {
-          postId: basePostId,
-          platform: post.platform,
-          content: post.content,
-          hashtags: post.hashtags,
-        },
+  let savedPosts;
+  try {
+    savedPosts = await prisma.$transaction(async (tx) => {
+      await tx.platformPost.deleteMany({
+        where: { postId: basePostId },
       });
-      created.push(platformPost);
-    }
 
-    return created;
-  });
+      const created = [];
+      for (const post of newPosts) {
+        const platformPost = await tx.platformPost.create({
+          data: {
+            postId: basePostId,
+            platform: post.platform,
+            content: post.content,
+            hashtags: post.hashtags,
+          },
+        });
+        created.push(platformPost);
+      }
+
+      return created;
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to save platform posts: ${error.message}`);
+  }
 
   return {
     success: true,
@@ -222,17 +264,22 @@ export async function regeneratePlatformPosts(basePostId, userId, prisma) {
 }
 
 export async function getPostsWithPlatforms(userId, type, targetDate, prisma) {
-  const basePost = await prisma.generatedPost.findFirst({
-    where: {
-      userId,
-      type,
-      date: targetDate,
-      isLatest: true,
-    },
-    include: {
-      platformPosts: true,
-    },
-  });
+  let basePost;
+  try {
+    basePost = await prisma.generatedPost.findFirst({
+      where: {
+        userId,
+        type,
+        date: targetDate,
+        isLatest: true,
+      },
+      include: {
+        platformPosts: true,
+      },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch posts: ${error.message}`);
+  }
 
   return basePost;
 }
@@ -241,15 +288,22 @@ export async function canUserRegenerate(userId, prisma) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const regenerationCount = await prisma.generatedPost.count({
-    where: {
-      userId,
-      generationType: "MANUAL",
-      createdAt: {
-        gte: today,
+  let regenerationCount;
+  try {
+    regenerationCount = await prisma.generatedPost.count({
+      where: {
+        userId,
+        generationType: "MANUAL",
+        createdAt: {
+          gte: today,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    throw new DatabaseError(
+      `Failed to check regeneration count: ${error.message}`,
+    );
+  }
 
   const DAILY_LIMIT = 3;
   return regenerationCount < DAILY_LIMIT;
@@ -259,15 +313,22 @@ export async function getRegenerationCount(userId, prisma) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const count = await prisma.generatedPost.count({
-    where: {
-      userId,
-      generationType: "MANUAL",
-      createdAt: {
-        gte: today,
+  let count;
+  try {
+    count = await prisma.generatedPost.count({
+      where: {
+        userId,
+        generationType: "MANUAL",
+        createdAt: {
+          gte: today,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    throw new DatabaseError(
+      `Failed to get regeneration count: ${error.message}`,
+    );
+  }
 
   return {
     used: count,
