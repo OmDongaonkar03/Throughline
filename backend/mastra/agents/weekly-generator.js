@@ -2,6 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import { getModelString } from "../../lib/llm-config.js";
 import { startOfWeek, endOfWeek, formatDate } from "../../lib/time.js";
 import { buildCompleteToneProfile, generateToneGuidance } from "../../lib/tone-profile-builder.js";
+import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
 
 export function createWeeklyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
@@ -147,7 +148,13 @@ ${dailyNarratives}
 Your task: Find the pattern or thread that connects these days. Show what the week was really about. Write it exactly as the user would write it - same style, same voice. Don't list day by day; reveal the bigger picture.`;
 
   try {
-    const response = await agent.generate(prompt);
+    const response = await retryWithBackoff(async () => {
+      return await withTimeout(
+        agent.generate(prompt),
+        60000
+      );
+    });
+    
     const fullText = response.text.trim();
 
     const parts = fullText.split(/THEMES:|HIGHLIGHTS:|PATTERNS:|EVOLUTION:/);

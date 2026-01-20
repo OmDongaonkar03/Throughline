@@ -2,6 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import { getModelString } from "../../lib/llm-config.js";
 import { startOfMonth, endOfMonth, formatDate } from "../../lib/time.js";
 import { buildCompleteToneProfile, generateToneGuidance } from "../../lib/tone-profile-builder.js";
+import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
 
 export function createMonthlyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
@@ -158,7 +159,13 @@ ${weeklyNarratives}
 Your task: Show the arc of this month. What was it fundamentally about? How did things progress from week 1 to week ${weeklyPosts.length}? What foundation was built? What does this enable going forward? Write it exactly as the user would - same style, same voice.`;
 
   try {
-    const response = await agent.generate(prompt);
+    const response = await retryWithBackoff(async () => {
+      return await withTimeout(
+        agent.generate(prompt),
+        60000
+      );
+    });
+    
     const fullText = response.text.trim();
 
     const parts = fullText.split(/THEMES:|ACHIEVEMENTS:|SHIFTS:|MOMENTUM:|NEXT_FOCUS:/);

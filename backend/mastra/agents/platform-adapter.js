@@ -2,6 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import { getModelString } from "../../lib/llm-config.js";
 import { getPlatformSpec } from "../../lib/platform-specs.js";
 import { buildCompleteToneProfile } from "../../lib/tone-profile-builder.js";
+import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
 
 export function createPlatformAdapterAgent() {
   const agentConfig = {
@@ -22,9 +23,6 @@ CRITICAL: You are NOT rewriting in a "platform style" - you're adapting the user
   return new Agent(agentConfig);
 }
 
-/**
- * Adapt base content for a specific platform
- */
 export async function adaptForPlatform(
   baseContent,
   metadata,
@@ -35,7 +33,6 @@ export async function adaptForPlatform(
   const agent = createPlatformAdapterAgent();
   const completeTone = buildCompleteToneProfile(toneProfile);
 
-  // Build tone guidance
   let toneGuidance = "";
   if (completeTone) {
     toneGuidance = `
@@ -50,12 +47,10 @@ USER'S VOICE (preserve this exactly):
     }
   }
 
-  // Build preference guidance
   let preferenceGuidance = `
 USER PREFERENCES:`;
 
   if (completeTone) {
-    // Emoji preference
     if (completeTone.includeEmojis) {
       preferenceGuidance += `
 - Emojis: Use sparingly when natural (user allows emojis)`;
@@ -64,7 +59,6 @@ USER PREFERENCES:`;
 - Emojis: NEVER use (user prefers no emojis)`;
     }
 
-    // Hashtag preference
     if (completeTone.includeHashtags && spec.hashtagLimit > 0) {
       preferenceGuidance += `
 - Hashtags: Include ${spec.hashtagLimit} relevant hashtags at the end`;
@@ -73,7 +67,6 @@ USER PREFERENCES:`;
 - Hashtags: Do not include (user prefers no hashtags or platform doesn't support them)`;
     }
 
-    // Length preference
     if (completeTone.preferredLength) {
       const lengthMap = {
         concise: "Keep it tight - aim for the shorter end of the platform limit",
@@ -84,7 +77,6 @@ USER PREFERENCES:`;
 - Length: ${lengthMap[completeTone.preferredLength] || completeTone.preferredLength}`;
     }
 
-    // Target audience
     if (completeTone.targetAudience?.length > 0) {
       preferenceGuidance += `
 - Target Audience: ${completeTone.targetAudience.join(", ")}`;
@@ -122,29 +114,30 @@ OUTPUT FORMAT:
 Return ONLY the adapted post content, nothing else. No preamble, no explanation, no meta-commentary.`;
 
   try {
-    const response = await agent.generate(prompt);
+    const response = await retryWithBackoff(async () => {
+      return await withTimeout(
+        agent.generate(prompt),
+        60000
+      );
+    });
+    
     let content = response.text.trim();
 
-    // Remove any markdown code blocks that might have been added
     content = content.replace(/```\n?/g, "").trim();
 
-    // Extract hashtags if present
     let hashtags = [];
     if (completeTone?.includeHashtags && spec.hashtagLimit > 0) {
       hashtags = extractHashtags(content, spec.hashtagLimit);
     } else {
-      // Remove hashtags if user doesn't want them
       content = content.replace(/#\w+/g, "").trim();
     }
 
-    // Remove emojis if user doesn't want them
     if (completeTone && !completeTone.includeEmojis) {
-      // Remove emoji characters (basic emoji removal)
       content = content.replace(
         /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu,
         ""
       );
-      content = content.replace(/\s+/g, " ").trim(); // Clean up extra spaces
+      content = content.replace(/\s+/g, " ").trim();
     }
 
     return {
@@ -158,9 +151,6 @@ Return ONLY the adapted post content, nothing else. No preamble, no explanation,
   }
 }
 
-/**
- * Extract hashtags from content
- */
 function extractHashtags(content, limit) {
   const hashtagRegex = /#(\w+)/g;
   const matches = content.match(hashtagRegex) || [];

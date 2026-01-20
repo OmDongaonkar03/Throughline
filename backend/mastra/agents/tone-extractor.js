@@ -1,6 +1,7 @@
 import { Agent } from "@mastra/core/agent";
 import { z } from "zod";
 import { getModelString } from "../../lib/llm-config.js";
+import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
 
 const toneProfileSchema = z.object({
   voice: z
@@ -104,10 +105,15 @@ Create a detailed profile that captures:
 Be specific and actionable. This profile will be used to generate new content that sounds exactly like this person.`;
 
   try {
-    const response = await agent.generate(prompt, {
-      structuredOutput: {
-        schema: toneProfileSchema,
-      },
+    const response = await retryWithBackoff(async () => {
+      return await withTimeout(
+        agent.generate(prompt, {
+          structuredOutput: {
+            schema: toneProfileSchema,
+          },
+        }),
+        60000
+      );
     });
 
     return {

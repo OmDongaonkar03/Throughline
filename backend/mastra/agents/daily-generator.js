@@ -2,6 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import { getModelString } from "../../lib/llm-config.js";
 import { startOfDay, endOfDay, formatDate } from "../../lib/time.js";
 import { buildCompleteToneProfile, generateToneGuidance } from "../../lib/tone-profile-builder.js";
+import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
 
 export function createDailyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
@@ -138,7 +139,13 @@ ${checkInsText}
 Your task: Take these scattered thoughts and create a coherent narrative in the user's authentic voice. Make it clearer and more insightful, but don't change their style. Extract any underlying patterns or insights if present.`;
 
   try {
-    const response = await agent.generate(prompt);
+    const response = await retryWithBackoff(async () => {
+      return await withTimeout(
+        agent.generate(prompt),
+        60000
+      );
+    });
+    
     const fullText = response.text.trim();
 
     const parts = fullText.split(/THEMES:|HIGHLIGHTS:|INSIGHTS:/);
