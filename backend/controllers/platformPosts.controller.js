@@ -3,262 +3,206 @@ import { regeneratePlatformPosts } from "../mastra/index.js";
 import { canUserRegenerate, getRegenerationCount } from "../mastra/index.js";
 import { startOfDay } from "../lib/time.js";
 import { isLLMConfigured } from "../lib/llm-config.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
+import {
+  ValidationError,
+  NotFoundError,
+  AuthorizationError,
+  RateLimitError,
+  LLMError,
+} from "../utils/errors.js";
 
-export const updatePost = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { postId } = req.params;
-    const { content } = req.body;
+export const updatePost = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { postId } = req.params;
+  const { content } = req.body;
 
-    if (!content || content.trim() === "") {
-      return res.status(400).json({
-        message: "Content is required",
-      });
-    }
-
-    // Verify the post belongs to the user
-    const post = await prisma.generatedPost.findFirst({
-      where: {
-        id: postId,
-        userId,
-      },
-    });
-
-    if (!post) {
-      return res.status(404).json({
-        message: "Post not found or does not belong to you",
-      });
-    }
-
-    // Update the post content
-    const updatedPost = await prisma.generatedPost.update({
-      where: {
-        id: postId,
-      },
-      data: {
-        content: content.trim(),
-        updatedAt: new Date(),
-      },
-    });
-
-    res.json({
-      message: "Post updated successfully",
-      post: {
-        id: updatedPost.id,
-        content: updatedPost.content,
-        updatedAt: updatedPost.updatedAt,
-      },
-    });
-  } catch (error) {
-    console.error("Update post error:", error);
-    res.status(500).json({ message: "Server error" });
+  if (!content || content.trim() === "") {
+    throw new ValidationError("Content is required");
   }
-};
 
-/**
- * Get platform posts for a generated post
- * GET /platform/posts/:postId
- */
-export const getPlatformPosts = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { postId } = req.params;
+  const post = await prisma.generatedPost.findFirst({
+    where: {
+      id: postId,
+      userId,
+    },
+  });
 
-    // Verify post belongs to user
-    const post = await prisma.generatedPost.findFirst({
-      where: {
-        id: postId,
-        userId,
-      },
-      include: {
-        platformPosts: true,
-        toneProfile: true,
-      },
-    });
-
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    res.json({
-      post: {
-        id: post.id,
-        date: post.date,
-        content: post.content,
-        metadata: post.metadata,
-        type: post.type,
-      },
-      platformPosts: post.platformPosts.map((pp) => ({
-        id: pp.id,
-        platform: pp.platform,
-        content: pp.content,
-        hashtags: pp.hashtags,
-        createdAt: pp.createdAt,
-      })),
-    });
-  } catch (error) {
-    console.error("Get platform posts error:", error);
-    res.status(500).json({ message: "Server error" });
+  if (!post) {
+    throw new NotFoundError("Post not found or does not belong to you");
   }
-};
 
-/**
- * Generate platform adaptations for a post
- * Regenerates platform posts for all enabled platforms
- * POST /platform/posts/:postId/generate
- */
-export const generatePlatformPosts = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { postId } = req.params;
+  const updatedPost = await prisma.generatedPost.update({
+    where: {
+      id: postId,
+    },
+    data: {
+      content: content.trim(),
+      updatedAt: new Date(),
+    },
+  });
 
-    // Check if LLM is configured
-    if (!isLLMConfigured()) {
-      return res.status(503).json({
-        message: "LLM provider not configured",
-      });
-    }
+  res.json({
+    message: "Post updated successfully",
+    post: {
+      id: updatedPost.id,
+      content: updatedPost.content,
+      updatedAt: updatedPost.updatedAt,
+    },
+  });
+});
 
-    // Check regeneration limit
-    const canRegen = await canUserRegenerate(userId, prisma);
-    if (!canRegen) {
-      const stats = await getRegenerationCount(userId, prisma);
-      return res.status(429).json({
-        message: "Daily regeneration limit reached",
-        limit: stats.limit,
-        used: stats.used,
-        remaining: stats.remaining,
-      });
-    }
+export const getPlatformPosts = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { postId } = req.params;
 
-    // Use orchestrated regeneration
-    const result = await regeneratePlatformPosts(postId, userId, prisma);
+  const post = await prisma.generatedPost.findFirst({
+    where: {
+      id: postId,
+      userId,
+    },
+    include: {
+      platformPosts: true,
+      toneProfile: true,
+    },
+  });
 
-    res.json({
-      message: "Platform posts generated successfully",
-      platformPosts: result.platformPosts.map((pp) => ({
-        id: pp.id,
-        platform: pp.platform,
-        content: pp.content,
-        hashtags: pp.hashtags,
-        createdAt: pp.createdAt,
-      })),
-      stats: {
-        generated: result.generated,
-        failed: result.failed,
-      },
-      errors: result.errors,
-    });
-  } catch (error) {
-    console.error("Generate platform posts error:", error);
-    res.status(500).json({
-      message: error.message || "Failed to generate platform posts",
-    });
+  if (!post) {
+    throw new NotFoundError("Post not found");
   }
-};
 
-/**
- * Update a specific platform post
- * PUT /platform/posts/:platformPostId
- */
-export const updatePlatformPost = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { platformPostId } = req.params;
-    const { content } = req.body;
+  res.json({
+    post: {
+      id: post.id,
+      date: post.date,
+      content: post.content,
+      metadata: post.metadata,
+      type: post.type,
+    },
+    platformPosts: post.platformPosts.map((pp) => ({
+      id: pp.id,
+      platform: pp.platform,
+      content: pp.content,
+      hashtags: pp.hashtags,
+      createdAt: pp.createdAt,
+    })),
+  });
+});
 
-    if (!content || content.trim().length === 0) {
-      return res.status(400).json({ message: "Content is required" });
-    }
+export const generatePlatformPosts = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { postId } = req.params;
 
-    // Verify platform post belongs to user
-    const platformPost = await prisma.platformPost.findUnique({
-      where: { id: platformPostId },
-      include: {
-        post: true,
-      },
-    });
-
-    if (!platformPost) {
-      return res.status(404).json({ message: "Platform post not found" });
-    }
-
-    if (platformPost.post.userId !== userId) {
-      return res.status(403).json({ message: "Unauthorized" });
-    }
-
-    // Update platform post
-    const updated = await prisma.platformPost.update({
-      where: { id: platformPostId },
-      data: {
-        content: content.trim(),
-      },
-    });
-
-    res.json({
-      message: "Platform post updated successfully",
-      platformPost: {
-        id: updated.id,
-        platform: updated.platform,
-        content: updated.content,
-        hashtags: updated.hashtags,
-      },
-    });
-  } catch (error) {
-    console.error("Update platform post error:", error);
-    res.status(500).json({ message: "Server error" });
+  if (!isLLMConfigured()) {
+    throw new LLMError("LLM provider not configured", 503);
   }
-};
 
-/**
- * Get platform posts by date
- * GET /platform/posts/date/:date
- */
-export const getPlatformPostsByDate = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { date } = req.params; // YYYY-MM-DD
-    const { type = "DAILY" } = req.query;
-
-    const targetDate = startOfDay(new Date(date));
-
-    // Get the base post
-    const post = await prisma.generatedPost.findFirst({
-      where: {
-        userId,
-        type: type.toUpperCase(),
-        date: targetDate,
-        isLatest: true,
-      },
-      include: {
-        platformPosts: true,
-      },
-    });
-
-    if (!post) {
-      return res.status(404).json({
-        message: "No post found for this date",
-      });
-    }
-
-    res.json({
-      post: {
-        id: post.id,
-        date: post.date,
-        content: post.content,
-        metadata: post.metadata,
-        type: post.type,
-      },
-      platformPosts: post.platformPosts.map((pp) => ({
-        id: pp.id,
-        platform: pp.platform,
-        content: pp.content,
-        hashtags: pp.hashtags,
-        createdAt: pp.createdAt,
-      })),
-    });
-  } catch (error) {
-    console.error("Get platform posts by date error:", error);
-    res.status(500).json({ message: "Server error" });
+  const canRegen = await canUserRegenerate(userId, prisma);
+  if (!canRegen) {
+    const stats = await getRegenerationCount(userId, prisma);
+    throw new RateLimitError(
+      `Daily regeneration limit reached. Limit: ${stats.limit}, Used: ${stats.used}, Remaining: ${stats.remaining}`
+    );
   }
-};
+
+  const result = await regeneratePlatformPosts(postId, userId, prisma);
+
+  res.json({
+    message: "Platform posts generated successfully",
+    platformPosts: result.platformPosts.map((pp) => ({
+      id: pp.id,
+      platform: pp.platform,
+      content: pp.content,
+      hashtags: pp.hashtags,
+      createdAt: pp.createdAt,
+    })),
+    stats: {
+      generated: result.generated,
+      failed: result.failed,
+    },
+    errors: result.errors,
+  });
+});
+
+export const updatePlatformPost = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { platformPostId } = req.params;
+  const { content } = req.body;
+
+  if (!content || content.trim().length === 0) {
+    throw new ValidationError("Content is required");
+  }
+
+  const platformPost = await prisma.platformPost.findUnique({
+    where: { id: platformPostId },
+    include: {
+      post: true,
+    },
+  });
+
+  if (!platformPost) {
+    throw new NotFoundError("Platform post not found");
+  }
+
+  if (platformPost.post.userId !== userId) {
+    throw new AuthorizationError("Unauthorized");
+  }
+
+  const updated = await prisma.platformPost.update({
+    where: { id: platformPostId },
+    data: {
+      content: content.trim(),
+    },
+  });
+
+  res.json({
+    message: "Platform post updated successfully",
+    platformPost: {
+      id: updated.id,
+      platform: updated.platform,
+      content: updated.content,
+      hashtags: updated.hashtags,
+    },
+  });
+});
+
+export const getPlatformPostsByDate = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { date } = req.params;
+  const { type = "DAILY" } = req.query;
+
+  const targetDate = startOfDay(new Date(date));
+
+  const post = await prisma.generatedPost.findFirst({
+    where: {
+      userId,
+      type: type.toUpperCase(),
+      date: targetDate,
+      isLatest: true,
+    },
+    include: {
+      platformPosts: true,
+    },
+  });
+
+  if (!post) {
+    throw new NotFoundError("No post found for this date");
+  }
+
+  res.json({
+    post: {
+      id: post.id,
+      date: post.date,
+      content: post.content,
+      metadata: post.metadata,
+      type: post.type,
+    },
+    platformPosts: post.platformPosts.map((pp) => ({
+      id: pp.id,
+      platform: pp.platform,
+      content: pp.content,
+      hashtags: pp.hashtags,
+      createdAt: pp.createdAt,
+    })),
+  });
+});

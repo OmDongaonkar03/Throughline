@@ -2,26 +2,43 @@ import { Agent } from "@mastra/core/agent";
 import { z } from "zod";
 import { getModelString } from "../../lib/llm-config.js";
 import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
+import {
+  ValidationError,
+  LLMError,
+  DatabaseError,
+} from "../../utils/errors.js";
 
 const toneProfileSchema = z.object({
   voice: z
     .string()
-    .describe("Overall voice description: casual/formal, warm/reserved, technical/accessible, authoritative/conversational, etc."),
+    .describe(
+      "Overall voice description: casual/formal, warm/reserved, technical/accessible, authoritative/conversational, etc.",
+    ),
   sentenceStyle: z
     .string()
-    .describe("Sentence structure patterns: short and punchy, long and flowing, mixed rhythm, complex with clauses, simple and direct, etc."),
+    .describe(
+      "Sentence structure patterns: short and punchy, long and flowing, mixed rhythm, complex with clauses, simple and direct, etc.",
+    ),
   emotionalRange: z
     .string()
-    .describe("Emotional expression style: analytical and reserved, enthusiastic and expressive, reflective and thoughtful, matter-of-fact, inspirational, etc."),
+    .describe(
+      "Emotional expression style: analytical and reserved, enthusiastic and expressive, reflective and thoughtful, matter-of-fact, inspirational, etc.",
+    ),
   commonPhrases: z
     .array(z.string())
-    .describe("Signature phrases, expressions, or vocabulary patterns this person uses repeatedly"),
+    .describe(
+      "Signature phrases, expressions, or vocabulary patterns this person uses repeatedly",
+    ),
   writingPersonality: z
     .string()
-    .describe("Overall writing personality in 2-3 sentences - what makes this voice unique and recognizable"),
+    .describe(
+      "Overall writing personality in 2-3 sentences - what makes this voice unique and recognizable",
+    ),
   exampleSentences: z
     .array(z.string())
-    .describe("3-5 representative sentences that perfectly capture how this person writes"),
+    .describe(
+      "3-5 representative sentences that perfectly capture how this person writes",
+    ),
 });
 
 export function createToneExtractorAgent() {
@@ -82,7 +99,9 @@ Your output will be used by other AI agents to generate content in this exact vo
 
 export async function extractToneProfile(samplePosts) {
   if (!samplePosts || samplePosts.length === 0) {
-    throw new Error("At least one sample post is required for tone extraction");
+    throw new ValidationError(
+      "At least one sample post is required for tone extraction",
+    );
   }
 
   const agent = createToneExtractorAgent();
@@ -112,7 +131,7 @@ Be specific and actionable. This profile will be used to generate new content th
             schema: toneProfileSchema,
           },
         }),
-        60000
+        60000,
       );
     });
 
@@ -122,71 +141,47 @@ Be specific and actionable. This profile will be used to generate new content th
     };
   } catch (error) {
     console.error("Tone extraction error:", error);
-    throw new Error(`Failed to extract tone profile: ${error.message}`);
+    throw new LLMError(`Failed to extract tone profile: ${error.message}`);
   }
 }
 
 export async function getToneProfile(userId, prisma) {
-  let toneProfile = await prisma.toneProfile.findUnique({
-    where: { userId },
-  });
+  let toneProfile;
+  try {
+    toneProfile = await prisma.toneProfile.findUnique({
+      where: { userId },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch tone profile: ${error.message}`);
+  }
 
   if (toneProfile) {
     return toneProfile;
   }
 
-  const samplePosts = await prisma.samplePost.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
-
-  if (samplePosts.length === 0) {
-    throw new Error("No sample posts found. Please add sample posts first.");
-  }
-
-  const extractedProfile = await extractToneProfile(
-    samplePosts.map((post) => post.content)
-  );
-
-  toneProfile = await prisma.toneProfile.create({
-    data: {
-      userId,
-      voice: extractedProfile.voice,
-      sentenceStyle: extractedProfile.sentenceStyle,
-      emotionalRange: extractedProfile.emotionalRange,
-      commonPhrases: extractedProfile.commonPhrases,
-      exampleText: extractedProfile.exampleText,
-      fullProfile: extractedProfile,
-      modelUsed: getModelString(),
-      extractedAt: new Date(),
-    },
-  });
-
-  return toneProfile;
-}
-
-export async function updateToneProfile(userId, prisma) {
-  const samplePosts = await prisma.samplePost.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
-
-  if (samplePosts.length === 0) {
-    throw new Error("No sample posts found. Please add sample posts first.");
-  }
-
-  const extractedProfile = await extractToneProfile(
-    samplePosts.map((post) => post.content)
-  );
-
-  const toneProfile = await prisma.$transaction(async (tx) => {
-    await tx.toneProfile.deleteMany({
+  let samplePosts;
+  try {
+    samplePosts = await prisma.samplePost.findMany({
       where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
     });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch sample posts: ${error.message}`);
+  }
 
-    return await tx.toneProfile.create({
+  if (samplePosts.length === 0) {
+    throw new ValidationError(
+      "No sample posts found. Please add sample posts first.",
+    );
+  }
+
+  const extractedProfile = await extractToneProfile(
+    samplePosts.map((post) => post.content),
+  );
+
+  try {
+    toneProfile = await prisma.toneProfile.create({
       data: {
         userId,
         voice: extractedProfile.voice,
@@ -199,7 +194,59 @@ export async function updateToneProfile(userId, prisma) {
         extractedAt: new Date(),
       },
     });
-  });
+  } catch (error) {
+    throw new DatabaseError(`Failed to save tone profile: ${error.message}`);
+  }
+
+  return toneProfile;
+}
+
+export async function updateToneProfile(userId, prisma) {
+  let samplePosts;
+  try {
+    samplePosts = await prisma.samplePost.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch sample posts: ${error.message}`);
+  }
+
+  if (samplePosts.length === 0) {
+    throw new ValidationError(
+      "No sample posts found. Please add sample posts first.",
+    );
+  }
+
+  const extractedProfile = await extractToneProfile(
+    samplePosts.map((post) => post.content),
+  );
+
+  let toneProfile;
+  try {
+    toneProfile = await prisma.$transaction(async (tx) => {
+      await tx.toneProfile.deleteMany({
+        where: { userId },
+      });
+
+      return await tx.toneProfile.create({
+        data: {
+          userId,
+          voice: extractedProfile.voice,
+          sentenceStyle: extractedProfile.sentenceStyle,
+          emotionalRange: extractedProfile.emotionalRange,
+          commonPhrases: extractedProfile.commonPhrases,
+          exampleText: extractedProfile.exampleText,
+          fullProfile: extractedProfile,
+          modelUsed: getModelString(),
+          extractedAt: new Date(),
+        },
+      });
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to update tone profile: ${error.message}`);
+  }
 
   return toneProfile;
 }

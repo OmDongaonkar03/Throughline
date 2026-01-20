@@ -1,8 +1,16 @@
 import { Agent } from "@mastra/core/agent";
 import { getModelString } from "../../lib/llm-config.js";
 import { startOfDay, endOfDay, formatDate } from "../../lib/time.js";
-import { buildCompleteToneProfile, generateToneGuidance } from "../../lib/tone-profile-builder.js";
+import {
+  buildCompleteToneProfile,
+  generateToneGuidance,
+} from "../../lib/tone-profile-builder.js";
 import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
+import {
+  NotFoundError,
+  LLMError,
+  DatabaseError,
+} from "../../utils/errors.js";
 
 export function createDailyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
@@ -91,31 +99,41 @@ export async function generateDailyPost(
   userId,
   targetDate,
   prisma,
-  isManual = false
+  isManual = false,
 ) {
   const startDate = startOfDay(targetDate);
   const endDate = endOfDay(targetDate);
 
-  const checkIns = await prisma.checkIn.findMany({
-    where: {
-      userId,
-      createdAt: {
-        gte: startDate,
-        lte: endDate,
+  let checkIns;
+  try {
+    checkIns = await prisma.checkIn.findMany({
+      where: {
+        userId,
+        createdAt: {
+          gte: startDate,
+          lte: endDate,
+        },
       },
-    },
-    orderBy: {
-      createdAt: "asc",
-    },
-  });
-
-  if (checkIns.length === 0) {
-    throw new Error("No check-ins found for this date");
+      orderBy: {
+        createdAt: "asc",
+      },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch check-ins: ${error.message}`);
   }
 
-  const toneProfile = await prisma.toneProfile.findUnique({
-    where: { userId },
-  });
+  if (checkIns.length === 0) {
+    throw new NotFoundError("No check-ins found for this date");
+  }
+
+  let toneProfile;
+  try {
+    toneProfile = await prisma.toneProfile.findUnique({
+      where: { userId },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch tone profile: ${error.message}`);
+  }
 
   const agent = createDailyGeneratorAgent(toneProfile);
 
@@ -140,12 +158,9 @@ Your task: Take these scattered thoughts and create a coherent narrative in the 
 
   try {
     const response = await retryWithBackoff(async () => {
-      return await withTimeout(
-        agent.generate(prompt),
-        60000
-      );
+      return await withTimeout(agent.generate(prompt), 60000);
     });
-    
+
     const fullText = response.text.trim();
 
     const parts = fullText.split(/THEMES:|HIGHLIGHTS:|INSIGHTS:/);
@@ -177,61 +192,78 @@ Your task: Take these scattered thoughts and create a coherent narrative in the 
       generatedAt: new Date().toISOString(),
     };
 
-    const generatedPost = await prisma.$transaction(async (tx) => {
-      await tx.generatedPost.updateMany({
-        where: {
-          userId,
-          type: "DAILY",
-          date: startDate,
-          isLatest: true,
-        },
-        data: {
-          isLatest: false,
-        },
-      });
+    let generatedPost;
+    try {
+      generatedPost = await prisma.$transaction(async (tx) => {
+        await tx.generatedPost.updateMany({
+          where: {
+            userId,
+            type: "DAILY",
+            date: startDate,
+            isLatest: true,
+          },
+          data: {
+            isLatest: false,
+          },
+        });
 
-      const previousVersions = await tx.generatedPost.count({
-        where: {
-          userId,
-          type: "DAILY",
-          date: startDate,
-        },
-      });
+        const previousVersions = await tx.generatedPost.count({
+          where: {
+            userId,
+            type: "DAILY",
+            date: startDate,
+          },
+        });
 
-      return await tx.generatedPost.create({
-        data: {
-          userId,
-          type: "DAILY",
-          date: startDate,
-          content: narrative,
-          metadata,
-          toneProfileId: toneProfile?.id,
-          version: previousVersions + 1,
-          isLatest: true,
-          generationType: isManual ? "MANUAL" : "AUTO",
-          modelUsed: getModelString(),
-        },
+        return await tx.generatedPost.create({
+          data: {
+            userId,
+            type: "DAILY",
+            date: startDate,
+            content: narrative,
+            metadata,
+            toneProfileId: toneProfile?.id,
+            version: previousVersions + 1,
+            isLatest: true,
+            generationType: isManual ? "MANUAL" : "AUTO",
+            modelUsed: getModelString(),
+          },
+        });
       });
-    });
+    } catch (error) {
+      throw new DatabaseError(
+        `Failed to save generated post: ${error.message}`,
+      );
+    }
 
     return generatedPost;
   } catch (error) {
+    if (error instanceof DatabaseError || error instanceof NotFoundError) {
+      throw error;
+    }
     console.error("Daily generation error:", error);
-    throw new Error(`Failed to generate daily post: ${error.message}`);
+    throw new LLMError(`Failed to generate daily post: ${error.message}`);
   }
 }
 
 export async function getOrGenerateDailyPost(userId, targetDate, prisma) {
   const startDate = startOfDay(targetDate);
 
-  const existingPost = await prisma.generatedPost.findFirst({
-    where: {
-      userId,
-      type: "DAILY",
-      date: startDate,
-      isLatest: true,
-    },
-  });
+  let existingPost;
+  try {
+    existingPost = await prisma.generatedPost.findFirst({
+      where: {
+        userId,
+        type: "DAILY",
+        date: startDate,
+        isLatest: true,
+      },
+    });
+  } catch (error) {
+    throw new DatabaseError(
+      `Failed to check for existing post: ${error.message}`,
+    );
+  }
 
   if (existingPost) {
     return existingPost;

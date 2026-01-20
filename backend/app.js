@@ -16,6 +16,8 @@ import feedbackRoutes from './routes/feedback.js'
 import scheduleRoutes from './routes/schedule.js';
 
 import { globalLimiter, authLimiter, llmLimiter } from './middleware/rateLimiter.js';
+import { requestId } from './middleware/requestId.js';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
 
@@ -29,6 +31,7 @@ app.use(
   })
 );
 
+app.use(requestId);
 app.use(logger("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -57,5 +60,8 @@ app.use("/schedule", scheduleRoutes);
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
+
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 export default app;

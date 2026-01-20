@@ -1,8 +1,16 @@
 import { Agent } from "@mastra/core/agent";
 import { getModelString } from "../../lib/llm-config.js";
 import { startOfWeek, endOfWeek, formatDate } from "../../lib/time.js";
-import { buildCompleteToneProfile, generateToneGuidance } from "../../lib/tone-profile-builder.js";
+import {
+  buildCompleteToneProfile,
+  generateToneGuidance,
+} from "../../lib/tone-profile-builder.js";
 import { retryWithBackoff, withTimeout } from "../../lib/llm-retry.js";
+import {
+  NotFoundError,
+  LLMError,
+  DatabaseError,
+} from "../../utils/errors.js";
 
 export function createWeeklyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
@@ -92,33 +100,43 @@ export async function generateWeeklyPost(
   userId,
   targetDate,
   prisma,
-  isManual = false
+  isManual = false,
 ) {
   const weekStart = startOfWeek(targetDate);
   const weekEnd = endOfWeek(targetDate);
 
-  const dailyPosts = await prisma.generatedPost.findMany({
-    where: {
-      userId,
-      type: "DAILY",
-      date: {
-        gte: weekStart,
-        lte: weekEnd,
+  let dailyPosts;
+  try {
+    dailyPosts = await prisma.generatedPost.findMany({
+      where: {
+        userId,
+        type: "DAILY",
+        date: {
+          gte: weekStart,
+          lte: weekEnd,
+        },
+        isLatest: true,
       },
-      isLatest: true,
-    },
-    orderBy: {
-      date: "asc",
-    },
-  });
-
-  if (dailyPosts.length === 0) {
-    throw new Error("No daily posts found for this week");
+      orderBy: {
+        date: "asc",
+      },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch daily posts: ${error.message}`);
   }
 
-  const toneProfile = await prisma.toneProfile.findUnique({
-    where: { userId },
-  });
+  if (dailyPosts.length === 0) {
+    throw new NotFoundError("No daily posts found for this week");
+  }
+
+  let toneProfile;
+  try {
+    toneProfile = await prisma.toneProfile.findUnique({
+      where: { userId },
+    });
+  } catch (error) {
+    throw new DatabaseError(`Failed to fetch tone profile: ${error.message}`);
+  }
 
   const agent = createWeeklyGeneratorAgent(toneProfile);
 
@@ -149,12 +167,9 @@ Your task: Find the pattern or thread that connects these days. Show what the we
 
   try {
     const response = await retryWithBackoff(async () => {
-      return await withTimeout(
-        agent.generate(prompt),
-        60000
-      );
+      return await withTimeout(agent.generate(prompt), 60000);
     });
-    
+
     const fullText = response.text.trim();
 
     const parts = fullText.split(/THEMES:|HIGHLIGHTS:|PATTERNS:|EVOLUTION:/);
@@ -175,7 +190,7 @@ Your task: Find the pattern or thread that connects these days. Show what the we
       parts[3]
         ?.trim()
         .split(",")
-        .map((p) => t.trim())
+        .map((p) => p.trim())
         .filter(Boolean) || [];
     const evolution = parts[4]?.trim() || "";
 
@@ -190,61 +205,78 @@ Your task: Find the pattern or thread that connects these days. Show what the we
       generatedAt: new Date().toISOString(),
     };
 
-    const generatedPost = await prisma.$transaction(async (tx) => {
-      await tx.generatedPost.updateMany({
-        where: {
-          userId,
-          type: "WEEKLY",
-          date: weekStart,
-          isLatest: true,
-        },
-        data: {
-          isLatest: false,
-        },
-      });
+    let generatedPost;
+    try {
+      generatedPost = await prisma.$transaction(async (tx) => {
+        await tx.generatedPost.updateMany({
+          where: {
+            userId,
+            type: "WEEKLY",
+            date: weekStart,
+            isLatest: true,
+          },
+          data: {
+            isLatest: false,
+          },
+        });
 
-      const previousVersions = await tx.generatedPost.count({
-        where: {
-          userId,
-          type: "WEEKLY",
-          date: weekStart,
-        },
-      });
+        const previousVersions = await tx.generatedPost.count({
+          where: {
+            userId,
+            type: "WEEKLY",
+            date: weekStart,
+          },
+        });
 
-      return await tx.generatedPost.create({
-        data: {
-          userId,
-          type: "WEEKLY",
-          date: weekStart,
-          content: narrative,
-          metadata,
-          toneProfileId: toneProfile?.id,
-          version: previousVersions + 1,
-          isLatest: true,
-          generationType: isManual ? "MANUAL" : "AUTO",
-          modelUsed: getModelString(),
-        },
+        return await tx.generatedPost.create({
+          data: {
+            userId,
+            type: "WEEKLY",
+            date: weekStart,
+            content: narrative,
+            metadata,
+            toneProfileId: toneProfile?.id,
+            version: previousVersions + 1,
+            isLatest: true,
+            generationType: isManual ? "MANUAL" : "AUTO",
+            modelUsed: getModelString(),
+          },
+        });
       });
-    });
+    } catch (error) {
+      throw new DatabaseError(
+        `Failed to save generated post: ${error.message}`,
+      );
+    }
 
     return generatedPost;
   } catch (error) {
+    if (error instanceof DatabaseError || error instanceof NotFoundError) {
+      throw error;
+    }
     console.error("Weekly generation error:", error);
-    throw new Error(`Failed to generate weekly post: ${error.message}`);
+    throw new LLMError(`Failed to generate weekly post: ${error.message}`);
   }
 }
 
 export async function getOrGenerateWeeklyPost(userId, targetDate, prisma) {
   const weekStart = startOfWeek(targetDate);
 
-  const existingPost = await prisma.generatedPost.findFirst({
-    where: {
-      userId,
-      type: "WEEKLY",
-      date: weekStart,
-      isLatest: true,
-    },
-  });
+  let existingPost;
+  try {
+    existingPost = await prisma.generatedPost.findFirst({
+      where: {
+        userId,
+        type: "WEEKLY",
+        date: weekStart,
+        isLatest: true,
+      },
+    });
+  } catch (error) {
+    throw new DatabaseError(
+      `Failed to check for existing post: ${error.message}`,
+    );
+  }
 
   if (existingPost) {
     return existingPost;
