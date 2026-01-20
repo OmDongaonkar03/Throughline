@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { verifyAccessToken } from "../utils/jwt.js";
 import prisma from "../db/prisma.js";
 import { asyncHandler } from "./asyncHandler.js";
@@ -58,5 +59,9 @@ export const authenticate = asyncHandler(async (req, res, next) => {
   }
 
   req.user = user;
+  
+  //bind user to Sentry context
+  Sentry.setUser({ id: user.id });
+
   next();
 });
