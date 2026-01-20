@@ -176,7 +176,7 @@ export const schemas = {
     body: z.object({
       postId: z.string().min(1, 'Post ID is required'),
       rating: z.number().int().min(1).max(2, 'Rating must be 1 or 2'),
-      issue: z.string().optional(),
+      issue: z.string().nullable().optional(),
     }),
   }),
 
