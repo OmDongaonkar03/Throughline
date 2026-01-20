@@ -4,14 +4,13 @@ import {
   getScheduleSettings,
   updateScheduleSettings,
 } from "../controllers/generationSchedule.controller.js";
+import { validate, schemas } from "../middleware/validation.js";
 
 const router = express.Router();
 
-// All routes require authentication
 router.use(authenticate);
 
-// Schedule Settings Routes
 router.get("/settings", getScheduleSettings);
-router.put("/settings", updateScheduleSettings);
+router.put("/settings", validate(schemas.updateScheduleSettings), updateScheduleSettings);
 
 export default router;

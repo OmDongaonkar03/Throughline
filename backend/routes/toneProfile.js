@@ -4,13 +4,11 @@ import {
   updateToneProfileCustomizations,
 } from "../controllers/toneProfile.controller.js";
 import { authenticate } from "../middleware/auth.js";
+import { validate, schemas } from "../middleware/validation.js";
 
 const router = express.Router();
 
-// GET /tone - Get tone profile for authenticated user
 router.get("/", authenticate, getToneProfile);
-
-// PUT /tone - Update tone profile customizations
-router.put("/", authenticate, updateToneProfileCustomizations);
+router.put("/", authenticate, validate(schemas.updateToneProfile), updateToneProfileCustomizations);
 
 export default router;

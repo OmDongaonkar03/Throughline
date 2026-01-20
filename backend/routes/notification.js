@@ -4,13 +4,11 @@ import {
   updateNotificationSettings,
 } from "../controllers/notification.controller.js";
 import { authenticate } from "../middleware/auth.js";
+import { validate, schemas } from "../middleware/validation.js";
 
 const router = express.Router();
 
-// GET /notifications - Get user's notification settings
 router.get("/", authenticate, getNotificationSettings);
-
-// PUT /notifications - Update notification settings
-router.put("/", authenticate, updateNotificationSettings);
+router.put("/", authenticate, validate(schemas.updateNotificationSettings), updateNotificationSettings);
 
 export default router;

@@ -9,28 +9,23 @@ import {
   generatePlatformPosts,
   updatePlatformPost,
   getPlatformPostsByDate,
-  updatePost, // Import the base post update function
+  updatePost,
 } from "../controllers/platformPosts.controller.js";
+import { validate, schemas } from "../middleware/validation.js";
 
 const router = express.Router();
 
-// All routes require authentication
 router.use(authenticate);
 
-// Platform Settings Routes
 router.get("/settings", getPlatformSettings);
-router.put("/settings", updatePlatformSettings);
+router.put("/settings", validate(schemas.updatePlatformSettings), updatePlatformSettings);
 
-// Platform Posts Routes
 router.get("/posts/:postId", getPlatformPosts);
 router.post("/posts/:postId/generate", generatePlatformPosts);
 
-// Base Post Update Route
-router.put("/posts/base/:postId", updatePost);
+router.put("/posts/base/:postId", validate(schemas.updateBasePost), updatePost);
+router.put("/posts/platform/:platformPostId", validate(schemas.updatePlatformPost), updatePlatformPost);
 
-// Platform Post Update Route
-router.put("/posts/platform/:platformPostId", updatePlatformPost);
-
-router.get("/posts/date/:date", getPlatformPostsByDate);
+router.get("/posts/date/:date", validate(schemas.getPlatformPostsByDate), getPlatformPostsByDate);
 
 export default router;
