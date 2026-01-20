@@ -4,15 +4,13 @@ import {
   getFeedback,
 } from '../controllers/feedback.controller.js';
 import { authenticate } from '../middleware/auth.js';
+import { validate, schemas } from '../middleware/validation.js';
 
 const router = express.Router();
 
-// All feedback routes require authentication
 router.use(authenticate);
 
-// Feedback routes
-// POST /feedback and GET /feedback/:postId
-router.post('/', submitFeedback);
+router.post('/', validate(schemas.submitFeedback), submitFeedback);
 router.get('/:postId', getFeedback);
 
 export default router;

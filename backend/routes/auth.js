@@ -7,25 +7,15 @@ import {
   me,
   logout,
 } from "../controllers/auth.controller.js";
+import { validate, schemas } from "../middleware/validation.js";
 
 const router = express.Router();
 
-// POST /auth/signup
-router.post("/signup", signup);
-
-// POST /auth/login
-router.post("/login", login);
-
-// GET /auth/google/callback
+router.post("/signup", validate(schemas.signup), signup);
+router.post("/login", validate(schemas.login), login);
 router.get("/google/callback", googleCallback);
-
-// POST /auth/refresh
 router.post("/refresh", refresh);
-
-// GET /auth/me
 router.get("/me", me);
-
-// POST /auth/logout
 router.post("/logout", logout);
 
 export default router;

@@ -13,33 +13,26 @@ import {
   getConfig,
 } from '../controllers/generation.controller.js';
 import { authenticate } from '../middleware/auth.js';
+import { validate, schemas } from '../middleware/validation.js';
 
 const router = express.Router();
 
-// All generation routes require authentication
 router.use(authenticate);
 
-// Tone profile routes
 router.post('/tone/extract', extractTone);
 router.get('/tone', getTone);
 
-// Daily post routes
-router.post('/daily', generateDaily);
-router.get('/daily/:date', getDaily);
+router.post('/daily', validate(schemas.generateDaily), generateDaily);
+router.get('/daily/:date', validate(schemas.getDaily), getDaily);
 
-// Weekly post routes
-router.post('/weekly', generateWeekly);
-router.get('/weekly/:date', getWeekly);
+router.post('/weekly', validate(schemas.generateWeekly), generateWeekly);
+router.get('/weekly/:date', validate(schemas.getWeekly), getWeekly);
 
-// Monthly post routes
-router.post('/monthly', generateMonthly);
-router.get('/monthly/:date', getMonthly);
+router.post('/monthly', validate(schemas.generateMonthly), generateMonthly);
+router.get('/monthly/:date', validate(schemas.getMonthly), getMonthly);
 
-// Regeneration status
 router.get('/regen-status', getRegenStatus);
-
-// General routes
-router.get('/posts', getAllPosts);
+router.get('/posts', validate(schemas.getAllPosts), getAllPosts);
 router.get('/config', getConfig);
 
 export default router;
