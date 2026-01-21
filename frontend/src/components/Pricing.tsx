@@ -9,31 +9,31 @@ const plans = [
     name: "Free",
     price: "₹0",
     period: "forever",
-    description: "Perfect for getting started",
+    description: "Start building your story",
     features: [
-      "Daily check-ins",
-      "Daily/weekly memory",
+      "Daily thought tracking",
+      "Weekly pattern recognition",
       "1 post/day (first 3 days)",
       "Then 1 post/week",
       "Recent memory only",
     ],
-    cta: "Start Free",
+    cta: "Start Tracking",
     popular: false,
   },
   {
     name: "Pro",
-    price: "₹499",
+    price: "₹399",
     period: "/mo",
-    description: "For serious builders",
+    description: "Full memory, unlimited stories",
     features: [
-      "Unlimited check-ins",
+      "Unlimited tracking",
       "Unlimited posts",
-      "Full memory (forever)",
+      "Forever memory layer",
       "Auto-scheduling",
       "Tone control",
-      "Voice tuning with your samples",
+      "Voice learning from your samples",
     ],
-    cta: "Start Pro",
+    cta: "Unlock Full Memory",
     popular: true,
   },
 ];
@@ -51,7 +51,7 @@ export const Pricing = () => {
         >
           <h2 className="section-heading mb-4">Simple pricing</h2>
           <p className="section-subheading mx-auto">
-            Start free, upgrade when you're ready
+            Start free. Upgrade when your story gets bigger.
           </p>
         </motion.div>
 

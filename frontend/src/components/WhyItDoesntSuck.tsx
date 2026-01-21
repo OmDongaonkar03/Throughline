@@ -4,18 +4,18 @@ import { Zap, User, Award } from "lucide-react";
 const benefits = [
   {
     icon: Zap,
-    tagline: "No more blank screen paralysis",
-    description: "You have content. You just forgot it existed.",
+    tagline: "Your brain is full. We remember for you.",
+    description: "Log messy thoughts. We find the patterns you forgot existed.",
   },
   {
     icon: User,
-    tagline: "Sounds like you, not ChatGPT",
-    description: "Upload 4-5 of your posts. We match your style.",
+    tagline: "Sounds like you, not a robot",
+    description: "We learn your voice. Your posts feel like you wrote them - because you did, just scattered across days.",
   },
   {
     icon: Award,
-    tagline: "Your work deserves to be seen",
-    description: "From scattered check-ins to coherent growth stories.",
+    tagline: "Progress is invisible until you tell the story",
+    description: "Scattered check-ins become coherent narratives. Your journey, connected.",
   },
 ];
 
@@ -30,9 +30,9 @@ export const WhyItDoesntSuck = () => {
           transition={{ duration: 0.5 }}
           className="text-center mb-16"
         >
-          <h2 className="section-heading mb-4">Why it doesn't s*ck</h2>
+          <h2 className="section-heading mb-4">Why this isn't another AI writer</h2>
           <p className="section-subheading mx-auto">
-            Content creation shouldn't feel like work
+            You don't need perfect thoughts. You need a memory layer.
           </p>
         </motion.div>
 

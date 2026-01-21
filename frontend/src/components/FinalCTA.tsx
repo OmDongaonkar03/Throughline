@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 const benefits = [
   "No credit card required",
-  "Set up in 30 seconds", 
+  "Start tracking in 30 seconds", 
   "Cancel anytime",
 ];
 
@@ -21,11 +21,11 @@ export const FinalCTA = () => {
           className="card-elevated p-8 md:p-12 text-center"
         >
           <h2 className="section-heading mb-4">
-            Start tracking what you build
+            Stop losing your progress to time
           </h2>
           
           <p className="section-subheading mx-auto mb-8">
-            Your work tells a story. Let us help you share it.
+            You're building something. We'll help you remember and share it.
           </p>
 
           <div className="flex flex-wrap justify-center gap-6 mb-8">
@@ -39,7 +39,7 @@ export const FinalCTA = () => {
 
           <Link to="/auth">
             <Button size="lg" className="gap-2">
-              Sign up — it's free
+              Start your memory layer
               <ArrowRight className="w-4 h-4" />
             </Button>
           </Link>

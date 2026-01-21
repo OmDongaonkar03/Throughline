@@ -4,18 +4,18 @@ import { Edit3, Layers, Send } from "lucide-react";
 const steps = [
   {
     icon: Edit3,
-    title: "Check in daily",
-    description: "Tell us what you built, learned, or shipped. Takes 30 seconds.",
+    title: "Log what matters",
+    description: "Brain dump your work, wins, failures. No polish needed. Just track.",
   },
   {
     icon: Layers,
-    title: "We compress your journey",
-    description: "Daily → weekly → monthly memory. No clutter, just growth.",
+    title: "We remember everything",
+    description: "Your daily chaos becomes weekly patterns. Patterns become your story.",
   },
   {
     icon: Send,
-    title: "Generate posts on demand",
-    description: "Real stories from your work, in your voice. Ready to share.",
+    title: "Share your evolution",
+    description: "Turn scattered thoughts into posts people actually care about. In your voice.",
   },
 ];
 
@@ -32,7 +32,7 @@ export const HowItWorks = () => {
         >
           <h2 className="section-heading mb-4">How it works</h2>
           <p className="section-subheading mx-auto">
-            Three simple steps from scattered thoughts to polished content
+            Stop writing. Start tracking. We'll handle the storytelling.
           </p>
         </motion.div>
 

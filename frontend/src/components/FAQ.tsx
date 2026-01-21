@@ -4,20 +4,20 @@ import { ChevronDown } from "lucide-react";
 
 const faqs = [
   {
-    question: "Do I have to check in every day?",
-    answer: "No. But the more you track, the better your posts. Consistency helps us understand your journey and generate more authentic content.",
+    question: "Do I have to track every day?",
+    answer: "No. But the more you log, the better we recognize patterns. Track when it matters. We'll connect the dots.",
   },
   {
-    question: "What if I miss days?",
-    answer: "Life happens. Generate with what you have or backfill later. We'll work with whatever data you provide.",
+    question: "What if I miss days or weeks?",
+    answer: "Your memory doesn't disappear. Backfill later or just continue. We work with what you give us—no guilt trips.",
   },
   {
     question: "Can I edit before posting?",
-    answer: "Yes. Every draft is editable. We generate the content, but you have full control over the final result.",
+    answer: "Always. We generate the story, you control the final cut. Think of us as your memory assistant, not your publisher.",
   },
   {
-    question: "What happens to my free posts after 3 days?",
-    answer: "You drop to 1 post/week. Enough to stay consistent and keep building your audience without the pressure.",
+    question: "What happens to my memory on the free plan?",
+    answer: "You keep recent memory and can still generate posts. Upgrade for forever memory and unlimited story generation.",
   },
 ];
 
@@ -36,7 +36,7 @@ export const FAQ = () => {
         >
           <h2 className="section-heading mb-4">FAQ</h2>
           <p className="section-subheading mx-auto">
-            Got questions? We've got answers.
+            Questions about your memory layer
           </p>
         </motion.div>
 
