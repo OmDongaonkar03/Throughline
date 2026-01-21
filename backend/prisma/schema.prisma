@@ -16,6 +16,7 @@ model User {
   googleId             String?               @unique
   profilePhoto         String?
   verified             Boolean               @default(false)
+  hasCompletedOnboarding Boolean             @default(false)
   refreshTokens        RefreshToken[]
   notificationSettings NotificationSettings?
   verificationTokens   VerificationToken[]

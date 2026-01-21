@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Spinner from "@/components/ui/spinner";
 
@@ -9,6 +9,7 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -20,6 +21,16 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  // If user hasn't completed onboarding and is not already on the onboarding page
+  if (user.hasCompletedOnboarding === false && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  // If user has completed onboarding and is trying to access onboarding page, redirect to dashboard
+  if (user.hasCompletedOnboarding === true && location.pathname === "/onboarding") {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
