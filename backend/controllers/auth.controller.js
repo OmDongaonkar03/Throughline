@@ -4,12 +4,16 @@ import {
   generateAccessToken,
   generateRefreshToken,
   generateVerificationToken,
+  generatePasswordResetToken,
   verifyRefreshToken,
+  verifyPasswordResetToken,
   hashPassword,
   comparePassword,
+  validatePassword,
 } from "../utils/jwt.js";
 import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
+import { passwordResetEmailTemplate } from "../templates/passwordResetEmail.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import {
   ValidationError,
@@ -529,4 +533,149 @@ export const logout = asyncHandler(async (req, res) => {
   });
 
   res.json({ message: "Logged out successfully" });
+});
+
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    throw new ValidationError("Email is required");
+  }
+
+  const successMessage = "If an account exists with this email, you will receive a password reset link.";
+
+  const user = await prisma.user.findUnique({ where: { email } });
+
+  if (!user) {
+    return res.json({ message: successMessage });
+  }
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const tokensSentToday = await prisma.passwordResetToken.count({
+    where: {
+      userId: user.id,
+      createdAt: {
+        gte: startOfDay,
+      },
+    },
+  });
+
+  if (tokensSentToday >= 3) {
+    throw new RateLimitError(
+      "Maximum password reset requests reached for today. Please try again tomorrow."
+    );
+  }
+
+  const resetToken = generatePasswordResetToken(user.id, user.email);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+  const tokenHash = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  await prisma.passwordResetToken.create({
+    data: {
+      token: resetToken,
+      tokenHash: tokenHash,
+      userId: user.id,
+      email: user.email,
+      used: false,
+      expiresAt,
+      createdAt: new Date(),
+    },
+  });
+
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+  const emailContent = passwordResetEmailTemplate({
+    name: user.name,
+    resetLink,
+  });
+
+  try {
+    await sendMail({
+      to: user.email,
+      subject: emailContent.subject,
+      html: emailContent.html,
+      text: emailContent.text,
+    });
+  } catch (emailError) {
+    console.error("Failed to send password reset email:", emailError);
+  }
+
+  res.json({ message: successMessage });
+});
+
+export const resetPassword = asyncHandler(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    throw new ValidationError("Token and new password are required");
+  }
+
+  if (!validatePassword(newPassword)) {
+    throw new ValidationError(
+      "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one special character (@$!%*?&)"
+    );
+  }
+
+  const decoded = verifyPasswordResetToken(token);
+  if (!decoded) {
+    throw new AuthenticationError("Invalid or expired reset token");
+  }
+
+  const tokenHash = crypto
+    .createHash("sha256")
+    .update(token)
+    .digest("hex");
+
+  const storedToken = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash },
+    include: { user: true },
+  });
+
+  if (!storedToken) {
+    throw new AuthenticationError("Invalid reset token");
+  }
+
+  if (new Date() > storedToken.expiresAt) {
+    throw new AuthenticationError("Reset token has expired");
+  }
+
+  if (storedToken.used) {
+    throw new AuthenticationError("Reset token has already been used");
+  }
+
+  if (storedToken.email !== decoded.email || storedToken.userId !== decoded.userId) {
+    throw new AuthenticationError("Invalid reset token");
+  }
+
+  const hashedPassword = await hashPassword(newPassword);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: storedToken.userId },
+      data: {
+        password: hashedPassword,
+        updatedAt: new Date(),
+      },
+    });
+
+    await tx.passwordResetToken.update({
+      where: { tokenHash },
+      data: { used: true },
+    });
+
+    await tx.refreshToken.deleteMany({
+      where: { userId: storedToken.userId },
+    });
+  });
+
+  res.json({
+    message: "Password reset successful. Please login with your new password.",
+  });
 });

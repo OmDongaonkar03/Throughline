@@ -19,6 +19,7 @@ model User {
   refreshTokens        RefreshToken[]
   notificationSettings NotificationSettings?
   verificationTokens   VerificationToken[]
+  passwordResetTokens  PasswordResetToken[]
   checkIns             CheckIn[]
   samplePosts          SamplePost[]
   generatedPosts       GeneratedPost[]
@@ -47,6 +48,22 @@ model RefreshToken {
 }
 
 model VerificationToken {
+  id        String   @id @default(cuid())
+  token     String   @db.Text
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([email])
+  @@index([tokenHash])
+}
+
+model PasswordResetToken {
   id        String   @id @default(cuid())
   token     String   @db.Text
   tokenHash String   @unique
