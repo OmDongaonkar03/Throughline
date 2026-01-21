@@ -46,16 +46,24 @@ export const AuroraHero = () => {
             </div>
             <span className="text-foreground font-medium">Throughline</span>
           </Link>
-          
+
           <nav className="hidden md:flex items-center gap-8">
-            <a href="#how-it-works" className="nav-link">How it works</a>
-            <a href="#pricing" className="nav-link">Pricing</a>
-            <a href="#faq" className="nav-link">FAQ</a>
+            <a href="#how-it-works" className="nav-link">
+              How it works
+            </a>
+            <a href="#pricing" className="nav-link">
+              Pricing
+            </a>
+            <a href="#faq" className="nav-link">
+              FAQ
+            </a>
           </nav>
 
           <div className="flex items-center gap-3">
             <Link to="/auth">
-              <Button variant="ghost" size="sm">Log in</Button>
+              <Button variant="ghost" size="sm">
+                Log in
+              </Button>
             </Link>
             <Link to="/auth">
               <Button size="sm">Get Started</Button>
@@ -76,7 +84,7 @@ export const AuroraHero = () => {
             Now in beta
           </span>
         </motion.div>
-        
+
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -85,19 +93,20 @@ export const AuroraHero = () => {
         >
           Check in. We remember.
           <br />
-          <span className="text-primary">You post.</span>
+          <span className="text-primary">You share.</span>
         </motion.h1>
-        
+
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.5 }}
           className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10"
         >
-          Daily check-ins become authentic social posts. We compress your work journey 
-          into memory and generate content that sounds like you.
+          Daily check-ins become a coherent story of what you’re building. We
+          remember your work over time and turn it into posts that sound like
+          you.
         </motion.p>
-        
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -110,11 +119,15 @@ export const AuroraHero = () => {
               <ArrowRight className="w-4 h-4" />
             </Button>
           </Link>
-          
-          <Button 
-            variant="outline" 
+
+          <Button
+            variant="outline"
             size="lg"
-            onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+            onClick={() =>
+              document
+                .getElementById("how-it-works")
+                ?.scrollIntoView({ behavior: "smooth" })
+            }
           >
             See how it works
           </Button>

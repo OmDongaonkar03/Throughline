@@ -14,7 +14,7 @@ export const SeeItInAction = () => {
         >
           <h2 className="section-heading mb-4">See it in action</h2>
           <p className="section-subheading mx-auto">
-            From messy check-in to polished post
+            From brain dump to story worth telling
           </p>
         </motion.div>
 
@@ -29,13 +29,13 @@ export const SeeItInAction = () => {
           <div className="card-elevated p-6 flex flex-col">
             <div className="flex items-center gap-2 mb-4">
               <PenLine className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Check-in</span>
+              <span className="text-sm text-muted-foreground">Your scattered thoughts</span>
             </div>
             <div className="flex-1 bg-secondary rounded-md p-4 font-mono text-sm text-muted-foreground leading-relaxed">
               "spent all day fixing cors issues with jwt cookies, finally got it working. also refactored the auth middleware but broke something in the process lol. tomorrow need to write tests"
             </div>
             <div className="mt-4 text-xs text-muted-foreground">
-              Raw thought · 30 seconds
+              No polish required · Just log it
             </div>
           </div>
 
@@ -50,7 +50,7 @@ export const SeeItInAction = () => {
           <div className="card-elevated p-6 flex flex-col border-primary/20">
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-4 h-4 text-primary" />
-              <span className="text-sm text-primary">Generated post</span>
+              <span className="text-sm text-primary">Your story, connected</span>
             </div>
             <div className="flex-1 bg-primary/5 rounded-md p-4 text-sm leading-relaxed space-y-3">
               <p className="text-foreground">
@@ -64,7 +64,7 @@ export const SeeItInAction = () => {
               </p>
             </div>
             <div className="mt-4 text-xs text-muted-foreground">
-              Ready to post · Your voice
+              We remembered · We connected · You share
             </div>
           </div>
         </motion.div>
