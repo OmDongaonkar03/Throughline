@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Lock, ArrowLeft, AlertCircle } from "lucide-react";
+import { Lock, ArrowLeft, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Link } from "react-router-dom";
+import PasswordStrengthIndicator from "@/components/PasswordStrengthIndicator";
 
 const ResetPassword = () => {
   const [searchParams] = useSearchParams();
@@ -16,43 +16,50 @@ const ResetPassword = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [validationError, setValidationError] = useState("");
-  
+
+  const [isValidatingToken, setIsValidatingToken] = useState(true);
+  const [tokenValid, setTokenValid] = useState(false);
+  const [tokenError, setTokenError] = useState("");
+
   const token = searchParams.get("token");
   const navigate = useNavigate();
-  const { resetPassword } = useAuth();
+  const { validateResetToken, resetPassword } = useAuth();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!token) {
-      toast({
-        variant: "destructive",
-        title: "Invalid Link",
-        description: "This password reset link is invalid or has expired.",
-      });
-      navigate("/auth");
-    }
-  }, [token, navigate, toast]);
+    const checkToken = async () => {
+      if (!token) {
+        setTokenValid(false);
+        setTokenError(
+          "No reset token provided. Please request a new password reset link.",
+        );
+        setIsValidatingToken(false);
+        return;
+      }
 
-  const validatePasswordStrength = (password) => {
-    // Min 8 chars, 1 uppercase, 1 lowercase, 1 special character
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    
-    if (password.length < 8) {
-      return "Password must be at least 8 characters long";
-    }
-    if (!/[a-z]/.test(password)) {
-      return "Password must contain at least one lowercase letter";
-    }
-    if (!/[A-Z]/.test(password)) {
-      return "Password must contain at least one uppercase letter";
-    }
-    if (!/[@$!%*?&]/.test(password)) {
-      return "Password must contain at least one special character (@$!%*?&)";
-    }
-    if (!passwordRegex.test(password)) {
-      return "Password does not meet requirements";
-    }
-    return "";
+      setIsValidatingToken(true);
+      const result = await validateResetToken(token);
+
+      if (result.valid) {
+        setTokenValid(true);
+      } else {
+        setTokenValid(false);
+        setTokenError(result.message || "Invalid or expired reset link.");
+      }
+
+      setIsValidatingToken(false);
+    };
+
+    checkToken();
+  }, [token, validateResetToken]);
+
+  const validatePassword = (password) => {
+    return (
+      password.length >= 8 &&
+      /[A-Z]/.test(password) &&
+      /[a-z]/.test(password) &&
+      /[@$!%*?&]/.test(password)
+    );
   };
 
   const handleSubmit = async (e) => {
@@ -66,9 +73,8 @@ const ResetPassword = () => {
     }
 
     // Validate password strength
-    const strengthError = validatePasswordStrength(newPassword);
-    if (strengthError) {
-      setValidationError(strengthError);
+    if (!validatePassword(newPassword)) {
+      setValidationError("Password does not meet all requirements");
       return;
     }
 
@@ -80,14 +86,16 @@ const ResetPassword = () => {
       if (result.success) {
         toast({
           title: "Password Reset Successful",
-          description: "Your password has been reset. Please login with your new password.",
+          description:
+            "Your password has been reset. Please login with your new password.",
         });
         navigate("/auth");
       } else {
         toast({
           variant: "destructive",
           title: "Reset Failed",
-          description: result.error || "Failed to reset password. Please try again.",
+          description:
+            result.error || "Failed to reset password. Please try again.",
         });
       }
     } catch (err) {
@@ -101,8 +109,62 @@ const ResetPassword = () => {
     }
   };
 
-  if (!token) {
-    return null;
+  if (isValidatingToken) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-sm text-muted-foreground">
+            Validating reset link...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!tokenValid) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="w-full max-w-md"
+        >
+          {/* Logo */}
+          <div className="flex items-center gap-2 mb-8">
+            <div className="w-8 h-8 flex items-center justify-center">
+              <img
+                src="logo-icon.png"
+                alt="Logo"
+                className="w-full h-full object-contain"
+                loading="lazy"
+              />
+            </div>
+            <span className="text-foreground font-medium">Throughline</span>
+          </div>
+
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{tokenError}</AlertDescription>
+          </Alert>
+
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Your password reset link may have expired or is invalid. Please
+              request a new one.
+            </p>
+
+            <Link to="/auth">
+              <Button className="w-full">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Login
+              </Button>
+            </Link>
+          </div>
+        </motion.div>
+      </div>
+    );
   }
 
   return (
@@ -153,17 +215,6 @@ const ResetPassword = () => {
           </Alert>
         )}
 
-        {/* Password Requirements */}
-        <div className="mb-6 p-4 bg-muted rounded-lg">
-          <p className="text-sm font-medium mb-2">Password must contain:</p>
-          <ul className="text-sm text-muted-foreground space-y-1">
-            <li>• At least 8 characters</li>
-            <li>• One uppercase letter</li>
-            <li>• One lowercase letter</li>
-            <li>• One special character (@$!%*?&)</li>
-          </ul>
-        </div>
-
         {/* Reset Password Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-2">
@@ -205,6 +256,8 @@ const ResetPassword = () => {
               />
             </div>
           </div>
+
+          {newPassword && <PasswordStrengthIndicator password={newPassword} />}
 
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? "Resetting..." : "Reset Password"}

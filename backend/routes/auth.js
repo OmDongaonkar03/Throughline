@@ -7,6 +7,7 @@ import {
   me,
   logout,
   forgotPassword,
+  validateResetToken,
   resetPassword,
 } from "../controllers/auth.controller.js";
 import { validate, schemas } from "../middleware/validation.js";
@@ -20,6 +21,7 @@ router.post("/refresh", refresh);
 router.get("/me", me);
 router.post("/logout", logout);
 router.post("/forgot-password", forgotPassword);
+router.post("/validate-reset-token", validateResetToken);
 router.post("/reset-password", resetPassword);
 
 export default router;

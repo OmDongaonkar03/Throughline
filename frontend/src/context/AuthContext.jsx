@@ -13,12 +13,11 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [accessToken, setAccessToken] = useState(null); // kept in memory, dies on page refresh
+  const [accessToken, setAccessToken] = useState(null);
   const refreshTimeoutRef = useRef(null);
 
   const API_URL = import.meta.env.VITE_API_URL;
 
-  // JWT decoder
   const decodeToken = (token) => {
     try {
       const base64Url = token.split('.')[1];
@@ -36,22 +35,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Silent token refresh - happens automatically in the background
   const refreshToken = async () => {
     try {
-      // refresh token sent via httpOnly cookie, so no need to include it here
       const response = await fetch(`${API_URL}/auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // this is the magic that sends the httpOnly cookie
+        credentials: 'include',
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        // If not verified, logout user
         if (data.verified === false) {
           logout();
           return { success: false, error: data.message, needsVerification: true };
@@ -59,7 +55,6 @@ export const AuthProvider = ({ children }) => {
         throw new Error(data.message || 'Token refresh failed');
       }
 
-      // got a new access token, store it and schedule next refresh
       if (data.token) {
         setAccessToken(data.token);
         scheduleTokenRefresh(data.token);
@@ -72,13 +67,11 @@ export const AuthProvider = ({ children }) => {
       return { success: true, data };
     } catch (error) {
       console.error('Token refresh error:', error);
-      logout(); // refresh failed, boot them out
+      logout();
       return { success: false, error: error.message };
     }
   };
 
-  // Schedules the next token refresh before it expires
-  // Refreshes 5min before expiry, or halfway through if token life < 10min
   const scheduleTokenRefresh = (token) => {
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);
@@ -92,7 +85,6 @@ export const AuthProvider = ({ children }) => {
     const currentTime = Date.now() / 1000;
     const expiresIn = decoded.exp - currentTime;
     
-    // 5min before expiry, or halfway if short-lived token
     const refreshTime = expiresIn > 600 ? expiresIn - 300 : expiresIn / 2;
     
     if (refreshTime > 0) {
@@ -102,8 +94,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // On mount, check if user has an active session
-  // Calls /auth/me which validates the httpOnly cookie and returns user + fresh access token
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -112,7 +102,7 @@ export const AuthProvider = ({ children }) => {
           headers: {
             'Content-Type': 'application/json',
           },
-          credentials: 'include', // send the httpOnly cookie
+          credentials: 'include',
         });
 
         if (response.ok) {
@@ -128,12 +118,10 @@ export const AuthProvider = ({ children }) => {
           }
         } else {
           const data = await response.json();
-          // If not verified, clear state
           if (data.verified === false) {
             setUser(null);
             setAccessToken(null);
           } else {
-            // no valid session, they're logged out
             setUser(null);
             setAccessToken(null);
           }
@@ -149,7 +137,6 @@ export const AuthProvider = ({ children }) => {
 
     checkAuth();
 
-    // cleanup timeout when component unmounts
     return () => {
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
@@ -164,7 +151,7 @@ export const AuthProvider = ({ children }) => {
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // backend will set httpOnly cookie with refresh token
+        credentials: 'include',
         body: JSON.stringify({ name, email, password }),
       });
 
@@ -174,7 +161,6 @@ export const AuthProvider = ({ children }) => {
         throw new Error(data.message || 'Signup failed');
       }
 
-      // access token goes in memory, refresh token is already in httpOnly cookie
       if (data.token) {
         setAccessToken(data.token);
         scheduleTokenRefresh(data.token);
@@ -202,14 +188,13 @@ export const AuthProvider = ({ children }) => {
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // backend will set httpOnly cookie with refresh token
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        // Special handling for unverified users
         if (data.verified === false) {
           return { 
             success: false, 
@@ -221,7 +206,6 @@ export const AuthProvider = ({ children }) => {
         throw new Error(data.message || 'Login failed');
       }
 
-      // access token goes in memory, refresh token is already in httpOnly cookie
       if (data.token) {
         setAccessToken(data.token);
         scheduleTokenRefresh(data.token);
@@ -240,7 +224,6 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      // tell backend to invalidate refresh token and clear the httpOnly cookie
       await fetch(`${API_URL}/auth/logout`, {
         method: 'POST',
         headers: {
@@ -250,20 +233,16 @@ export const AuthProvider = ({ children }) => {
       });
     } catch (error) {
       console.error('Logout error:', error);
-      // meh, continue anyway
     } finally {
-      // stop the refresh timer
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
       }
       
-      // clear everything from memory
       setAccessToken(null);
       setUser(null);
     }
   };
 
-  // Forgot password function
   const forgotPassword = async (email) => {
     try {
       const response = await fetch(`${API_URL}/auth/forgot-password`, {
@@ -291,7 +270,40 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Reset password function
+  // NEW: Validate reset token function
+  const validateResetToken = async (token) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/validate-reset-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ token }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { 
+          valid: false, 
+          message: data.message || 'Invalid token'
+        };
+      }
+
+      return { 
+        valid: true, 
+        message: data.message 
+      };
+    } catch (error) {
+      console.error('Validate reset token error:', error);
+      return { 
+        valid: false, 
+        message: 'Failed to validate token'
+      };
+    }
+  };
+
   const resetPassword = async (token, newPassword) => {
     try {
       const response = await fetch(`${API_URL}/auth/reset-password`, {
@@ -319,10 +331,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // API wrapper with automatic 401 handling
-  // Use this instead of fetch() for all authenticated requests
   const apiRequest = async (url, options = {}) => {
-    // add access token to request if we have one
     const headers = {
       ...options.headers,
       ...(accessToken && { 'Authorization': `Bearer ${accessToken}` }),
@@ -331,40 +340,34 @@ export const AuthProvider = ({ children }) => {
     const config = {
       ...options,
       headers,
-      credentials: 'include', // always send httpOnly cookies
+      credentials: 'include',
     };
 
     let response = await fetch(url, config);
 
-    // if we get 401, token probably expired - try to refresh and retry once
     if (response.status === 401 && !options._retry) {
       const refreshResult = await refreshToken();
       
       if (refreshResult.success) {
-        // retry the original request with new token
-        options._retry = true; // prevent infinite loops
+        options._retry = true;
         return apiRequest(url, options);
       } else {
-        // refresh failed, user needs to login again
         if (refreshResult.needsVerification) {
-          // Component should handle this by checking response
           return response;
         }
         return response;
       }
     }
 
-    // If we get 403 with verification error, logout
     if (response.status === 403) {
       try {
         const data = await response.clone().json();
         if (data.verified === false) {
           logout();
-          // Return response with special flag for component to handle navigation
           response.needsVerification = true;
         }
       } catch (e) {
-        // If can't parse JSON, just return response
+        // ignore
       }
     }
 
@@ -375,8 +378,6 @@ export const AuthProvider = ({ children }) => {
     return !!user;
   };
 
-  // returns current access token from memory
-  // use this when making API calls that need auth
   const getToken = () => {
     return accessToken;
   };
@@ -388,11 +389,12 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     forgotPassword,
-    resetPassword, // ADDED: Export the reset password function
+    validateResetToken,
+    resetPassword,
     isLoggedIn,
     getToken,
-    refreshToken, // exposed in case you need to manually trigger a refresh
-    apiRequest, // use this for all API calls instead of fetch
+    refreshToken,
+    apiRequest,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -13,7 +13,7 @@ import {
 } from "../utils/jwt.js";
 import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
-import { passwordResetEmailTemplate } from "../templates/passwordResetEmail.js";
+import { passwordResetEmailTemplate } from "../templates/passwordResetEmail.js"; // FIXED: Added missing import
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import {
   ValidationError,
@@ -46,7 +46,7 @@ const sendVerificationEmail = async (user) => {
 
   if (tokensSentToday >= 3) {
     throw new RateLimitError(
-      "Maximum verification emails sent for today. Please try again tomorrow."
+      "Maximum verification emails sent for today. Please try again tomorrow.",
     );
   }
 
@@ -82,6 +82,13 @@ export const signup = asyncHandler(async (req, res) => {
 
   if (!name || !email || !password) {
     throw new ValidationError("All fields are required");
+  }
+
+  // FIXED: Added password validation on signup
+  if (!validatePassword(password)) {
+    throw new ValidationError(
+      "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one special character (@$!%*?&)",
+    );
   }
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -282,7 +289,9 @@ export const googleCallback = asyncHandler(async (req, res) => {
   if (!tokenResponse.ok) {
     console.error("Google token exchange error:", tokenData);
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    return res.redirect(`${frontendUrl}/auth/callback?error=authentication_failed`);
+    return res.redirect(
+      `${frontendUrl}/auth/callback?error=authentication_failed`,
+    );
   }
 
   const { access_token } = tokenData;
@@ -293,68 +302,44 @@ export const googleCallback = asyncHandler(async (req, res) => {
       headers: {
         Authorization: `Bearer ${access_token}`,
       },
-    }
+    },
   );
 
   if (!userInfoResponse.ok) {
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    return res.redirect(`${frontendUrl}/auth/callback?error=authentication_failed`);
+    return res.redirect(
+      `${frontendUrl}/auth/callback?error=authentication_failed`,
+    );
   }
 
   const googleUser = await userInfoResponse.json();
-  const { id: googleId, email, name, picture } = googleUser;
+  const { email, name, picture } = googleUser;
 
   let user = await prisma.user.findUnique({
     where: { email },
   });
 
-  const now = new Date();
   const refreshTokenValue = generateRefreshToken();
 
   if (user) {
-    const result = await prisma.$transaction(async (tx) => {
-      const updatedUser = await tx.user.update({
-        where: { id: user.id },
-        data: {
-          googleId: googleId,
-          profilePhoto: picture,
-          verified: true,
-          updatedAt: now,
-        },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          profilePhoto: true,
-          verified: true,
-          createdAt: true,
-        },
-      });
-
-      await tx.refreshToken.create({
-        data: {
-          token: refreshTokenValue,
-          userId: updatedUser.id,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          createdAt: new Date(),
-        },
-      });
-
-      return updatedUser;
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshTokenValue,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+      },
     });
-
-    user = result;
   } else {
     const result = await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
           email,
           name,
-          googleId,
           profilePhoto: picture,
           verified: true,
-          createdAt: now,
-          updatedAt: now,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         },
         select: {
           id: true,
@@ -455,7 +440,7 @@ export const refresh = asyncHandler(async (req, res) => {
 
   if (!storedToken.user.verified) {
     throw new AuthorizationError(
-      "Email not verified. Please check your email for verification link."
+      "Email not verified. Please check your email for verification link.",
     );
   }
 
@@ -497,7 +482,7 @@ export const me = asyncHandler(async (req, res) => {
 
   if (!storedToken.user.verified) {
     throw new AuthorizationError(
-      "Email not verified. Please check your email for verification link."
+      "Email not verified. Please check your email for verification link.",
     );
   }
 
@@ -542,7 +527,8 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     throw new ValidationError("Email is required");
   }
 
-  const successMessage = "If an account exists with this email, you will receive a password reset link.";
+  const successMessage =
+    "If an account exists with this email, you will receive a password reset link.";
 
   const user = await prisma.user.findUnique({ where: { email } });
 
@@ -562,10 +548,12 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     },
   });
 
+  // FIXED: Return generic success message instead of revealing rate limit
   if (tokensSentToday >= 3) {
-    throw new RateLimitError(
-      "Maximum password reset requests reached for today. Please try again tomorrow."
-    );
+    // Still return success message to prevent email enumeration
+    // But log it internally for monitoring
+    console.log(`Rate limit hit for password reset: ${email}`);
+    return res.json({ message: successMessage });
   }
 
   const resetToken = generatePasswordResetToken(user.id, user.email);
@@ -610,6 +598,57 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   res.json({ message: successMessage });
 });
 
+// NEW: Validate reset token endpoint
+export const validateResetToken = asyncHandler(async (req, res) => {
+  const { token } = req.body;
+
+  if (!token) {
+    throw new ValidationError("Token is required");
+  }
+
+  const decoded = verifyPasswordResetToken(token);
+  if (!decoded) {
+    return res.status(400).json({
+      valid: false,
+      message: "Invalid or expired reset token",
+    });
+  }
+
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+  const storedToken = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash },
+  });
+
+  if (!storedToken) {
+    return res.status(400).json({
+      valid: false,
+      message: "Invalid reset token",
+    });
+  }
+
+  if (new Date() > storedToken.expiresAt) {
+    return res.status(400).json({
+      valid: false,
+      message:
+        "Reset token has expired. Please request a new password reset link.",
+    });
+  }
+
+  if (storedToken.used) {
+    return res.status(400).json({
+      valid: false,
+      message:
+        "This reset link has already been used. Please request a new password reset if needed.",
+    });
+  }
+
+  res.json({
+    valid: true,
+    message: "Token is valid",
+  });
+});
+
 export const resetPassword = asyncHandler(async (req, res) => {
   const { token, newPassword } = req.body;
 
@@ -619,7 +658,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   if (!validatePassword(newPassword)) {
     throw new ValidationError(
-      "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one special character (@$!%*?&)"
+      "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one special character (@$!%*?&)",
     );
   }
 
@@ -628,10 +667,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
     throw new AuthenticationError("Invalid or expired reset token");
   }
 
-  const tokenHash = crypto
-    .createHash("sha256")
-    .update(token)
-    .digest("hex");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
   const storedToken = await prisma.passwordResetToken.findUnique({
     where: { tokenHash },
@@ -650,8 +686,22 @@ export const resetPassword = asyncHandler(async (req, res) => {
     throw new AuthenticationError("Reset token has already been used");
   }
 
-  if (storedToken.email !== decoded.email || storedToken.userId !== decoded.userId) {
+  if (
+    storedToken.email !== decoded.email ||
+    storedToken.userId !== decoded.userId
+  ) {
     throw new AuthenticationError("Invalid reset token");
+  }
+
+  // FIXED: Check if new password is same as current password
+  const isSamePassword = await comparePassword(
+    newPassword,
+    storedToken.user.password,
+  );
+  if (isSamePassword) {
+    throw new ValidationError(
+      "New password must be different from your current password",
+    );
   }
 
   const hashedPassword = await hashPassword(newPassword);

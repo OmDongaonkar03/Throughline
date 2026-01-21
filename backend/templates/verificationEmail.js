@@ -1,4 +1,8 @@
+import { escapeHtml } from "../utils/escapeHtml.js";
+
 export const verificationEmailTemplate = ({ name, verificationLink }) => {
+  const safeName = escapeHtml(name);
+  
   return {
     subject: "Verify your email address",
     html: `
@@ -27,7 +31,7 @@ export const verificationEmailTemplate = ({ name, verificationLink }) => {
                 <tr>
                   <td style="padding: 0 40px 40px;">
                     <p style="margin: 0 0 20px; color: #6b7280; font-size: 16px; line-height: 24px;">
-                      Hi ${name},
+                      Hi ${safeName},
                     </p>
                     <p style="margin: 0 0 20px; color: #6b7280; font-size: 16px; line-height: 24px;">
                       Thanks for signing up with Throughline! To complete your registration and start using your account, please verify your email address by clicking the button below.
@@ -73,7 +77,7 @@ export const verificationEmailTemplate = ({ name, verificationLink }) => {
       </html>
     `,
     text: `
-      Hi ${name},
+      Hi ${safeName},
       
       Thanks for signing up with Throughline! To complete your registration and start using your account, please verify your email address by clicking the link below:
       
