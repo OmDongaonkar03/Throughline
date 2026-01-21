@@ -263,6 +263,62 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Forgot password function
+  const forgotPassword = async (email) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to send reset email');
+      }
+
+      return { 
+        success: true, 
+        message: data.message || 'Password reset email sent successfully'
+      };
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Reset password function
+  const resetPassword = async (token, newPassword) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ token, newPassword }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to reset password');
+      }
+
+      return { 
+        success: true, 
+        message: data.message || 'Password reset successfully'
+      };
+    } catch (error) {
+      console.error('Reset password error:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
   // API wrapper with automatic 401 handling
   // Use this instead of fetch() for all authenticated requests
   const apiRequest = async (url, options = {}) => {
@@ -331,6 +387,8 @@ export const AuthProvider = ({ children }) => {
     signup,
     login,
     logout,
+    forgotPassword,
+    resetPassword, // ADDED: Export the reset password function
     isLoggedIn,
     getToken,
     refreshToken, // exposed in case you need to manually trigger a refresh

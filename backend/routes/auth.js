@@ -6,6 +6,8 @@ import {
   refresh,
   me,
   logout,
+  forgotPassword,
+  resetPassword,
 } from "../controllers/auth.controller.js";
 import { validate, schemas } from "../middleware/validation.js";
 
@@ -17,5 +19,7 @@ router.get("/google/callback", googleCallback);
 router.post("/refresh", refresh);
 router.get("/me", me);
 router.post("/logout", logout);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 
 export default router;

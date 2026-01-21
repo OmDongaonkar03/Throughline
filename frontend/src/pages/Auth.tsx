@@ -8,6 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -20,8 +27,13 @@ const Auth = () => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [verificationAlert, setVerificationAlert] = useState(null);
+  
+  // Forgot password state
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [isForgotPasswordLoading, setIsForgotPasswordLoading] = useState(false);
 
-  const { signup, login } = useAuth();
+  const { signup, login, forgotPassword } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -34,7 +46,6 @@ const Auth = () => {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.id]: e.target.value });
-    // Clear verification alert when user starts typing
     setVerificationAlert(null);
   };
 
@@ -52,7 +63,6 @@ const Auth = () => {
       }
 
       if (result.success) {
-        // Show verification message for signup
         if (!isLogin && result.verificationSent) {
           toast({
             title: "Account created!",
@@ -72,7 +82,6 @@ const Auth = () => {
           navigate("/dashboard");
         }
       } else {
-        // Handle verification needed error
         if (result.needsVerification) {
           setVerificationAlert({
             type: "warning",
@@ -96,6 +105,38 @@ const Auth = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setIsForgotPasswordLoading(true);
+
+    try {
+      const result = await forgotPassword(forgotPasswordEmail);
+      
+      if (result.success) {
+        toast({
+          title: "Email sent!",
+          description: result.message,
+        });
+        setShowForgotPassword(false);
+        setForgotPasswordEmail("");
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: result.error || "Failed to send reset email.",
+        });
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+      });
+    } finally {
+      setIsForgotPasswordLoading(false);
     }
   };
 
@@ -236,9 +277,13 @@ const Auth = () => {
 
             {isLogin && (
               <div className="text-right">
-                <a href="#" className="text-sm text-primary hover:underline">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(true)}
+                  className="text-sm text-primary hover:underline"
+                >
                   Forgot password?
-                </a>
+                </button>
               </div>
             )}
 
@@ -294,6 +339,39 @@ const Auth = () => {
           </motion.div>
         </div>
       </div>
+
+      {/* Forgot Password Dialog */}
+      <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset your password</DialogTitle>
+            <DialogDescription>
+              Enter your email address and we'll send you a link to reset your password.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="forgot-email">Email</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="email"
+                  id="forgot-email"
+                  placeholder="you@example.com"
+                  className="pl-9"
+                  value={forgotPasswordEmail}
+                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                  disabled={isForgotPasswordLoading}
+                  required
+                />
+              </div>
+            </div>
+            <Button type="submit" className="w-full" disabled={isForgotPasswordLoading}>
+              {isForgotPasswordLoading ? "Sending..." : "Send reset link"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
