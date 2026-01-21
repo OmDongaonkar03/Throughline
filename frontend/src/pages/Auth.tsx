@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import PasswordStrengthIndicator from "@/components/PasswordStrengthIndicator";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -27,22 +28,32 @@ const Auth = () => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [verificationAlert, setVerificationAlert] = useState(null);
-  
+
   // Forgot password state
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [isForgotPasswordLoading, setIsForgotPasswordLoading] = useState(false);
+  const [emailSentSuccess, setEmailSentSuccess] = useState(false);
+  const [resendCount, setResendCount] = useState(0);
 
   const { signup, login, forgotPassword } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const googleAuthUrl = 
-  `https://accounts.google.com/o/oauth2/v2/auth?client_id=${
+  const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${
     import.meta.env.VITE_GOOGLE_CLIENT_ID
   }&redirect_uri=${
     import.meta.env.VITE_API_URL
   }/auth/google/callback&response_type=code&scope=email%20profile`;
+
+  const validatePassword = (password) => {
+    return (
+      password.length >= 8 &&
+      /[A-Z]/.test(password) &&
+      /[a-z]/.test(password) &&
+      /[@$!%*?&]/.test(password)
+    );
+  };
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.id]: e.target.value });
@@ -53,6 +64,17 @@ const Auth = () => {
     e.preventDefault();
     setIsLoading(true);
     setVerificationAlert(null);
+
+    // FIXED: Validate password on signup
+    if (!isLogin && !validatePassword(formData.password)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid Password",
+        description: "Please ensure your password meets all requirements.",
+      });
+      setIsLoading(false);
+      return;
+    }
 
     try {
       let result;
@@ -66,17 +88,19 @@ const Auth = () => {
         if (!isLogin && result.verificationSent) {
           toast({
             title: "Account created!",
-            description: "Please check your email to verify your account before logging in.",
+            description:
+              "Please check your email to verify your account before logging in.",
           });
           setVerificationAlert({
             type: "success",
-            message: "Account created! Please check your email to verify your account."
+            message:
+              "Account created! Please check your email to verify your account.",
           });
         } else {
           toast({
             title: isLogin ? "Welcome back!" : "Account created!",
-            description: isLogin 
-              ? "You've successfully signed in." 
+            description: isLogin
+              ? "You've successfully signed in."
               : "Your account has been created successfully.",
           });
           navigate("/dashboard");
@@ -85,16 +109,17 @@ const Auth = () => {
         if (result.needsVerification) {
           setVerificationAlert({
             type: "warning",
-            message: result.verificationSent 
+            message: result.verificationSent
               ? "Email not verified. A new verification link has been sent to your email."
-              : result.error
+              : result.error,
           });
         }
-        
+
         toast({
           variant: result.needsVerification ? "default" : "destructive",
           title: result.needsVerification ? "Verification Required" : "Error",
-          description: result.error || "Authentication failed. Please try again.",
+          description:
+            result.error || "Authentication failed. Please try again.",
         });
       }
     } catch (err) {
@@ -114,14 +139,14 @@ const Auth = () => {
 
     try {
       const result = await forgotPassword(forgotPasswordEmail);
-      
+
       if (result.success) {
+        setEmailSentSuccess(true);
+        setResendCount(resendCount + 1);
         toast({
           title: "Email sent!",
           description: result.message,
         });
-        setShowForgotPassword(false);
-        setForgotPasswordEmail("");
       } else {
         toast({
           variant: "destructive",
@@ -140,10 +165,31 @@ const Auth = () => {
     }
   };
 
+  // FIXED: Added resend email handler
+  const handleResendEmail = async () => {
+    if (resendCount >= 3) {
+      toast({
+        variant: "destructive",
+        title: "Limit Reached",
+        description:
+          "You've reached the maximum number of reset emails for today.",
+      });
+      return;
+    }
+    await handleForgotPassword({ preventDefault: () => {} });
+  };
+
   const handleToggleMode = () => {
     setIsLogin(!isLogin);
     setFormData({ name: "", email: "", password: "" });
     setVerificationAlert(null);
+  };
+
+  const handleCloseForgotPasswordDialog = () => {
+    setShowForgotPassword(false);
+    setForgotPasswordEmail("");
+    setEmailSentSuccess(false);
+    setResendCount(0);
   };
 
   return (
@@ -192,20 +238,23 @@ const Auth = () => {
 
           {/* Verification Alert */}
           {verificationAlert && (
-            <Alert className="mb-6" variant={verificationAlert.type === "warning" ? "default" : "default"}>
+            <Alert
+              className="mb-6"
+              variant={
+                verificationAlert.type === "warning" ? "default" : "default"
+              }
+            >
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                {verificationAlert.message}
-              </AlertDescription>
+              <AlertDescription>{verificationAlert.message}</AlertDescription>
             </Alert>
           )}
 
           {/* Social login buttons */}
           <div className="space-y-3 mb-6">
-            <Button 
-              variant="outline" 
-              className="w-full gap-2" 
-              onClick={() => window.location.href = googleAuthUrl}
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={() => (window.location.href = googleAuthUrl)}
               disabled={isLoading}
             >
               <FaGoogle className="w-4 h-4" />
@@ -275,6 +324,10 @@ const Auth = () => {
               </div>
             </div>
 
+            {!isLogin && formData.password && (
+              <PasswordStrengthIndicator password={formData.password} />
+            )}
+
             {isLogin && (
               <div className="text-right">
                 <button
@@ -288,7 +341,11 @@ const Auth = () => {
             )}
 
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Loading..." : isLogin ? "Sign in" : "Create account"}
+              {isLoading
+                ? "Loading..."
+                : isLogin
+                  ? "Sign in"
+                  : "Create account"}
             </Button>
           </form>
 
@@ -340,36 +397,86 @@ const Auth = () => {
         </div>
       </div>
 
-      {/* Forgot Password Dialog */}
-      <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+      <Dialog
+        open={showForgotPassword}
+        onOpenChange={handleCloseForgotPasswordDialog}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reset your password</DialogTitle>
             <DialogDescription>
-              Enter your email address and we'll send you a link to reset your password.
+              {emailSentSuccess
+                ? "Check your email for the password reset link."
+                : "Enter your email address and we'll send you a link to reset your password."}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleForgotPassword} className="space-y-4">
-            <div className="grid gap-2">
-              <Label htmlFor="forgot-email">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  type="email"
-                  id="forgot-email"
-                  placeholder="you@example.com"
-                  className="pl-9"
-                  value={forgotPasswordEmail}
-                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                  disabled={isForgotPasswordLoading}
-                  required
-                />
+
+          {!emailSentSuccess ? (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="forgot-email">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="email"
+                    id="forgot-email"
+                    placeholder="you@example.com"
+                    className="pl-9"
+                    value={forgotPasswordEmail}
+                    onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                    disabled={isForgotPasswordLoading}
+                    required
+                  />
+                </div>
               </div>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isForgotPasswordLoading}
+              >
+                {isForgotPasswordLoading ? "Sending..." : "Send reset link"}
+              </Button>
+            </form>
+          ) : (
+            <div className="space-y-4">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  We've sent a password reset link to{" "}
+                  <strong>{forgotPasswordEmail}</strong>. The link will expire
+                  in 15 minutes.
+                </AlertDescription>
+              </Alert>
+
+              <div className="text-sm text-muted-foreground text-center">
+                Didn't receive the email?
+              </div>
+
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleResendEmail}
+                disabled={isForgotPasswordLoading || resendCount >= 3}
+              >
+                {isForgotPasswordLoading ? "Sending..." : "Resend email"}
+              </Button>
+
+              {resendCount >= 3 && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Maximum resend limit reached (3 per day). Please try again
+                  tomorrow.
+                </p>
+              )}
+
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={handleCloseForgotPasswordDialog}
+              >
+                Close
+              </Button>
             </div>
-            <Button type="submit" className="w-full" disabled={isForgotPasswordLoading}>
-              {isForgotPasswordLoading ? "Sending..." : "Send reset link"}
-            </Button>
-          </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

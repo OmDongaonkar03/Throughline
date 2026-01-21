@@ -1,4 +1,8 @@
+import { escapeHtml } from "../utils/escapeHtml.js";
+
 export const passwordResetEmailTemplate = ({ name, resetLink }) => {
+  const safeName = escapeHtml(name);
+  
   return {
     subject: "Reset your password",
     html: `
@@ -27,7 +31,7 @@ export const passwordResetEmailTemplate = ({ name, resetLink }) => {
                 <tr>
                   <td style="padding: 0 40px 40px;">
                     <p style="margin: 0 0 20px; color: #6b7280; font-size: 16px; line-height: 24px;">
-                      Hi ${name},
+                      Hi ${safeName},
                     </p>
                     <p style="margin: 0 0 20px; color: #6b7280; font-size: 16px; line-height: 24px;">
                       We received a request to reset your password for your Throughline account. Click the button below to create a new password.
@@ -73,7 +77,7 @@ export const passwordResetEmailTemplate = ({ name, resetLink }) => {
       </html>
     `,
     text: `
-      Hi ${name},
+      Hi ${safeName},
       
       We received a request to reset your password for your Throughline account. Click the link below to create a new password:
       
