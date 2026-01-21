@@ -65,7 +65,6 @@ const Auth = () => {
     setIsLoading(true);
     setVerificationAlert(null);
 
-    // FIXED: Validate password on signup
     if (!isLogin && !validatePassword(formData.password)) {
       toast({
         variant: "destructive",
@@ -103,7 +102,14 @@ const Auth = () => {
               ? "You've successfully signed in."
               : "Your account has been created successfully.",
           });
-          navigate("/dashboard");
+          
+          // Check if user needs onboarding
+          const user = result.data?.user;
+          if (user && !user.hasCompletedOnboarding) {
+            navigate("/onboarding");
+          } else {
+            navigate("/dashboard");
+          }
         }
       } else {
         if (result.needsVerification) {
@@ -165,7 +171,6 @@ const Auth = () => {
     }
   };
 
-  // FIXED: Added resend email handler
   const handleResendEmail = async () => {
     if (resendCount >= 3) {
       toast({
@@ -231,27 +236,25 @@ const Auth = () => {
             </h1>
             <p className="text-sm text-muted-foreground">
               {isLogin
-                ? "Sign in to continue your journey"
-                : "Start tracking what you build"}
+                ? "Sign in to continue to Throughline"
+                : "Join Throughline and start your journey"}
             </p>
           </div>
 
-          {/* Verification Alert */}
+          {/* Verification alert */}
           {verificationAlert && (
             <Alert
-              className="mb-6"
-              variant={
-                verificationAlert.type === "warning" ? "default" : "default"
-              }
+              className={`mb-4 ${verificationAlert.type === "warning" ? "border-amber-500" : ""}`}
             >
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{verificationAlert.message}</AlertDescription>
             </Alert>
           )}
 
-          {/* Social login buttons */}
-          <div className="space-y-3 mb-6">
+          {/* Google login */}
+          <div>
             <Button
+              type="button"
               variant="outline"
               className="w-full gap-2"
               onClick={() => (window.location.href = googleAuthUrl)}

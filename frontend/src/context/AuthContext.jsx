@@ -270,7 +270,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // NEW: Validate reset token function
   const validateResetToken = async (token) => {
     try {
       const response = await fetch(`${API_URL}/auth/validate-reset-token`, {
@@ -327,6 +326,33 @@ export const AuthProvider = ({ children }) => {
       };
     } catch (error) {
       console.error('Reset password error:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  const completeOnboarding = async () => {
+    try {
+      const response = await apiRequest(`${API_URL}/auth/complete-onboarding`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to complete onboarding');
+      }
+
+      // Update user state
+      if (data.user) {
+        setUser(data.user);
+      }
+
+      return { success: true, data };
+    } catch (error) {
+      console.error('Complete onboarding error:', error);
       return { success: false, error: error.message };
     }
   };
@@ -391,6 +417,7 @@ export const AuthProvider = ({ children }) => {
     forgotPassword,
     validateResetToken,
     resetPassword,
+    completeOnboarding,
     isLoggedIn,
     getToken,
     refreshToken,

@@ -14,6 +14,7 @@ import Tone from "./pages/Tone";
 import Settings from "./pages/Settings";
 import VerifyEmail from "./pages/VerifyMail";
 import ResetPassword from "./pages/ResetPassword";
+import Onboarding from "./pages/Onboarding";
 import NotFound from "./pages/NotFound";
 
 import AuthCallback from './components/AuthCallback';
@@ -36,6 +37,16 @@ const App = () => (
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            
+            {/* Onboarding Route */}
+            <Route
+              path="/onboarding"
+              element={
+                <ProtectedRoute>
+                  <Onboarding />
+                </ProtectedRoute>
+              }
+            />
             
             {/* Protected Routes */}
             <Route

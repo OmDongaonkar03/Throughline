@@ -7,13 +7,14 @@ import {
   generatePasswordResetToken,
   verifyRefreshToken,
   verifyPasswordResetToken,
+  verifyAccessToken,
   hashPassword,
   comparePassword,
   validatePassword,
 } from "../utils/jwt.js";
 import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
-import { passwordResetEmailTemplate } from "../templates/passwordResetEmail.js"; // FIXED: Added missing import
+import { passwordResetEmailTemplate } from "../templates/passwordResetEmail.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import {
   ValidationError,
@@ -84,7 +85,6 @@ export const signup = asyncHandler(async (req, res) => {
     throw new ValidationError("All fields are required");
   }
 
-  // FIXED: Added password validation on signup
   if (!validatePassword(password)) {
     throw new ValidationError(
       "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one special character (@$!%*?&)",
@@ -108,6 +108,7 @@ export const signup = asyncHandler(async (req, res) => {
         email,
         password: hashedPassword,
         verified: false,
+        hasCompletedOnboarding: false,
         createdAt: now,
         updatedAt: now,
       },
@@ -117,6 +118,7 @@ export const signup = asyncHandler(async (req, res) => {
         name: true,
         profilePhoto: true,
         verified: true,
+        hasCompletedOnboarding: true,
         createdAt: true,
       },
     });
@@ -258,6 +260,7 @@ export const login = asyncHandler(async (req, res) => {
       name: user.name,
       profilePhoto: user.profilePhoto,
       verified: user.verified,
+      hasCompletedOnboarding: user.hasCompletedOnboarding,
       createdAt: user.createdAt,
     },
   });
@@ -305,40 +308,44 @@ export const googleCallback = asyncHandler(async (req, res) => {
     },
   );
 
+  const userInfo = await userInfoResponse.json();
+
   if (!userInfoResponse.ok) {
+    console.error("Google user info error:", userInfo);
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     return res.redirect(
       `${frontendUrl}/auth/callback?error=authentication_failed`,
     );
   }
 
-  const googleUser = await userInfoResponse.json();
-  const { email, name, picture } = googleUser;
+  const { id: googleId, email, name, picture } = userInfo;
 
-  let user = await prisma.user.findUnique({
-    where: { email },
-  });
+  let user = await prisma.user.findUnique({ where: { googleId } });
 
   const refreshTokenValue = generateRefreshToken();
 
-  if (user) {
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshTokenValue,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        createdAt: new Date(),
-      },
+  if (!user) {
+    const existingUserByEmail = await prisma.user.findUnique({ 
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        profilePhoto: true,
+        verified: true,
+        hasCompletedOnboarding: true,
+        googleId: true,
+        createdAt: true,
+      }
     });
-  } else {
-    const result = await prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
+
+    if (existingUserByEmail) {
+      user = await prisma.user.update({
+        where: { email },
         data: {
-          email,
-          name,
-          profilePhoto: picture,
+          googleId,
           verified: true,
-          createdAt: new Date(),
+          profilePhoto: picture || existingUserByEmail.profilePhoto,
           updatedAt: new Date(),
         },
         select: {
@@ -347,59 +354,82 @@ export const googleCallback = asyncHandler(async (req, res) => {
           name: true,
           profilePhoto: true,
           verified: true,
+          hasCompletedOnboarding: true,
           createdAt: true,
         },
       });
+    } else {
+      // New user - create account
+      user = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.user.create({
+          data: {
+            googleId,
+            email,
+            name,
+            profilePhoto: picture,
+            verified: true,
+            hasCompletedOnboarding: false,
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            profilePhoto: true,
+            verified: true,
+            hasCompletedOnboarding: true,
+            createdAt: true,
+          },
+        });
 
-      await tx.generationSchedule.create({
-        data: {
-          userId: newUser.id,
-          dailyEnabled: true,
-          dailyTime: "21:00",
-          weeklyEnabled: true,
-          weeklyDay: 0,
-          weeklyTime: "20:00",
-          monthlyEnabled: true,
-          monthlyDay: 28,
-          monthlyTime: "20:00",
-          timezone: process.env.TZ || "Asia/Kolkata",
-        },
+        await tx.generationSchedule.create({
+          data: {
+            userId: newUser.id,
+            dailyEnabled: true,
+            dailyTime: "21:00",
+            weeklyEnabled: true,
+            weeklyDay: 0,
+            weeklyTime: "20:00",
+            monthlyEnabled: true,
+            monthlyDay: 28,
+            monthlyTime: "20:00",
+            timezone: process.env.TZ || "Asia/Kolkata",
+          },
+        });
+
+        await tx.userPlatformSettings.create({
+          data: {
+            userId: newUser.id,
+            xEnabled: false,
+            linkedinEnabled: true,
+            redditEnabled: false,
+          },
+        });
+
+        await tx.notificationSettings.create({
+          data: {
+            userId: newUser.id,
+            emailDigest: false,
+            postReminders: true,
+            weeklyReport: false,
+          },
+        });
+
+        return newUser;
       });
-
-      await tx.userPlatformSettings.create({
-        data: {
-          userId: newUser.id,
-          xEnabled: false,
-          linkedinEnabled: true,
-          redditEnabled: false,
-        },
-      });
-
-      await tx.notificationSettings.create({
-        data: {
-          userId: newUser.id,
-          emailDigest: false,
-          postReminders: true,
-          weeklyReport: false,
-        },
-      });
-
-      await tx.refreshToken.create({
-        data: {
-          token: refreshTokenValue,
-          userId: newUser.id,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          createdAt: new Date(),
-        },
-      });
-
-      return newUser;
-    });
-
-    user = result;
+    }
   }
 
+  await prisma.refreshToken.create({
+    data: {
+      token: refreshTokenValue,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      createdAt: new Date(),
+    },
+  });
+
   const accessToken = generateAccessToken(user.id);
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
   res.cookie("refreshToken", refreshTokenValue, {
     httpOnly: true,
@@ -408,15 +438,28 @@ export const googleCallback = asyncHandler(async (req, res) => {
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  res.redirect(`${frontendUrl}/auth/callback?token=${accessToken}`);
+  const userData = encodeURIComponent(
+    JSON.stringify({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      profilePhoto: user.profilePhoto,
+      verified: user.verified,
+      hasCompletedOnboarding: user.hasCompletedOnboarding,
+      createdAt: user.createdAt,
+    }),
+  );
+
+  res.redirect(
+    `${frontendUrl}/auth/callback?token=${accessToken}&user=${userData}`,
+  );
 });
 
 export const refresh = asyncHandler(async (req, res) => {
   const { refreshToken } = req.cookies;
 
   if (!refreshToken) {
-    throw new AuthenticationError("Refresh token not found");
+    throw new AuthenticationError("No refresh token provided");
   }
 
   const decoded = verifyRefreshToken(refreshToken);
@@ -430,7 +473,7 @@ export const refresh = asyncHandler(async (req, res) => {
   });
 
   if (!storedToken) {
-    throw new AuthenticationError("Refresh token not found");
+    throw new AuthenticationError("Invalid refresh token");
   }
 
   if (new Date() > storedToken.expiresAt) {
@@ -454,6 +497,7 @@ export const refresh = asyncHandler(async (req, res) => {
       name: storedToken.user.name,
       profilePhoto: storedToken.user.profilePhoto,
       verified: storedToken.user.verified,
+      hasCompletedOnboarding: storedToken.user.hasCompletedOnboarding,
       createdAt: storedToken.user.createdAt,
     },
   });
@@ -497,6 +541,7 @@ export const me = asyncHandler(async (req, res) => {
       bio: storedToken.user.bio,
       profilePhoto: storedToken.user.profilePhoto,
       verified: storedToken.user.verified,
+      hasCompletedOnboarding: storedToken.user.hasCompletedOnboarding,
       createdAt: storedToken.user.createdAt,
     },
   });
@@ -548,10 +593,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     },
   });
 
-  // FIXED: Return generic success message instead of revealing rate limit
   if (tokensSentToday >= 3) {
-    // Still return success message to prevent email enumeration
-    // But log it internally for monitoring
     console.log(`Rate limit hit for password reset: ${email}`);
     return res.json({ message: successMessage });
   }
@@ -598,7 +640,6 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   res.json({ message: successMessage });
 });
 
-// NEW: Validate reset token endpoint
 export const validateResetToken = asyncHandler(async (req, res) => {
   const { token } = req.body;
 
@@ -693,7 +734,6 @@ export const resetPassword = asyncHandler(async (req, res) => {
     throw new AuthenticationError("Invalid reset token");
   }
 
-  // FIXED: Check if new password is same as current password
   const isSamePassword = await comparePassword(
     newPassword,
     storedToken.user.password,
@@ -727,5 +767,45 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   res.json({
     message: "Password reset successful. Please login with your new password.",
+  });
+});
+
+export const completeOnboarding = asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new AuthenticationError("No access token provided");
+  }
+
+  const token = authHeader.substring(7);
+  const decoded = verifyAccessToken(token);
+
+  if (!decoded) {
+    throw new AuthenticationError("Invalid access token");
+  }
+
+  const userId = decoded.userId;
+
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      hasCompletedOnboarding: true,
+      updatedAt: new Date(),
+    },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      bio: true,
+      profilePhoto: true,
+      verified: true,
+      hasCompletedOnboarding: true,
+      createdAt: true,
+    },
+  });
+
+  res.json({
+    message: "Onboarding completed successfully",
+    user,
   });
 });
