@@ -7,6 +7,10 @@ import {
   LLMError,
   DatabaseError,
 } from "../../utils/errors.js";
+import {
+  saveGeneratedPostTokenUsage,
+  calculateEstimatedCost,
+} from "../../lib/token-usage.js";
 
 const toneProfileSchema = z.object({
   voice: z
@@ -97,7 +101,7 @@ Your output will be used by other AI agents to generate content in this exact vo
   return new Agent(agentConfig);
 }
 
-export async function extractToneProfile(samplePosts) {
+export async function extractToneProfile(samplePosts, prisma = null, userId = null) {
   if (!samplePosts || samplePosts.length === 0) {
     throw new ValidationError(
       "At least one sample post is required for tone extraction",
@@ -135,9 +139,20 @@ Be specific and actionable. This profile will be used to generate new content th
       );
     });
 
+    // For now, just log it
+    if (response.usage) {
+      console.log('Tone extraction token usage:', {
+        userId,
+        promptTokens: response.usage.promptTokens,
+        completionTokens: response.usage.completionTokens,
+        totalTokens: response.usage.totalTokens,
+      });
+    }
+
     return {
       ...response.object,
       exampleText: samplesText,
+      tokenUsage: response.usage, // Return usage for potential future tracking
     };
   } catch (error) {
     console.error("Tone extraction error:", error);
@@ -178,6 +193,8 @@ export async function getToneProfile(userId, prisma) {
 
   const extractedProfile = await extractToneProfile(
     samplePosts.map((post) => post.content),
+    prisma,
+    userId,
   );
 
   try {
@@ -221,6 +238,8 @@ export async function updateToneProfile(userId, prisma) {
 
   const extractedProfile = await extractToneProfile(
     samplePosts.map((post) => post.content),
+    prisma,
+    userId,
   );
 
   let toneProfile;

@@ -11,6 +11,10 @@ import {
   LLMError,
   DatabaseError,
 } from "../../utils/errors.js";
+import {
+  saveGeneratedPostTokenUsage,
+  calculateEstimatedCost,
+} from "../../lib/token-usage.js";
 
 export function createWeeklyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
@@ -248,6 +252,18 @@ Your task: Find the pattern or thread that connects these days. Show what the we
         `Failed to save generated post: ${error.message}`,
       );
     }
+
+    // Save token usage
+    const modelUsed = getModelString();
+    const estimatedCost = calculateEstimatedCost(response.usage, modelUsed);
+    
+    saveGeneratedPostTokenUsage(prisma, {
+      generatedPostId: generatedPost.id,
+      usage: response.usage,
+      modelUsed,
+      agentType: "weekly-generator",
+      estimatedCost,
+    });
 
     return generatedPost;
   } catch (error) {
