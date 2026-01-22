@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Mail, Lock, User, AlertCircle } from "lucide-react";
 import { FaGoogle } from "react-icons/fa";
 import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,9 +36,16 @@ const Auth = () => {
   const [emailSentSuccess, setEmailSentSuccess] = useState(false);
   const [resendCount, setResendCount] = useState(0);
 
-  const { signup, login, forgotPassword } = useAuth();
+  const { signup, login, forgotPassword, user, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Redirect if user is already logged in
+  useEffect(() => {
+    if (!loading && user) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${
     import.meta.env.VITE_GOOGLE_CLIENT_ID
@@ -197,6 +204,20 @@ const Auth = () => {
     setResendCount(0);
   };
 
+  // Show loading state while checking auth
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render the auth form if user is logged in (will redirect)
+  if (user) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-background flex">
       {/* Left side - Form */}
@@ -236,23 +257,26 @@ const Auth = () => {
             </h1>
             <p className="text-sm text-muted-foreground">
               {isLogin
-                ? "Sign in to continue to Throughline"
-                : "Join Throughline and start your journey"}
+                ? "Enter your credentials to access your account"
+                : "Start your journey with daily check-ins"}
             </p>
           </div>
 
-          {/* Verification alert */}
+          {/* Verification Alert */}
           {verificationAlert && (
             <Alert
-              className={`mb-4 ${verificationAlert.type === "warning" ? "border-amber-500" : ""}`}
+              variant={
+                verificationAlert.type === "success" ? "default" : "destructive"
+              }
+              className="mb-4"
             >
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{verificationAlert.message}</AlertDescription>
             </Alert>
           )}
 
-          {/* Google login */}
-          <div>
+          {/* Google OAuth button */}
+          <div className="mb-4">
             <Button
               type="button"
               variant="outline"
