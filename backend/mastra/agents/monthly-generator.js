@@ -11,6 +11,10 @@ import {
   LLMError,
   DatabaseError,
 } from "../../utils/errors.js";
+import {
+  saveGeneratedPostTokenUsage,
+  calculateEstimatedCost,
+} from "../../lib/token-usage.js";
 
 export function createMonthlyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
@@ -268,6 +272,18 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
         `Failed to save generated post: ${error.message}`,
       );
     }
+
+    // Save token usage
+    const modelUsed = getModelString();
+    const estimatedCost = calculateEstimatedCost(response.usage, modelUsed);
+    
+    saveGeneratedPostTokenUsage(prisma, {
+      generatedPostId: generatedPost.id,
+      usage: response.usage,
+      modelUsed,
+      agentType: "monthly-generator",
+      estimatedCost,
+    });
 
     return generatedPost;
   } catch (error) {

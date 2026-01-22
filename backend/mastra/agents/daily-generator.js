@@ -11,6 +11,10 @@ import {
   LLMError,
   DatabaseError,
 } from "../../utils/errors.js";
+import {
+  saveGeneratedPostTokenUsage,
+  calculateEstimatedCost,
+} from "../../lib/token-usage.js";
 
 export function createDailyGeneratorAgent(toneProfile) {
   const completeTone = buildCompleteToneProfile(toneProfile);
@@ -235,6 +239,18 @@ Your task: Take these scattered thoughts and create a coherent narrative in the 
         `Failed to save generated post: ${error.message}`,
       );
     }
+
+    // Save token usage
+    const modelUsed = getModelString();
+    const estimatedCost = calculateEstimatedCost(response.usage, modelUsed);
+    
+    saveGeneratedPostTokenUsage(prisma, {
+      generatedPostId: generatedPost.id,
+      usage: response.usage,
+      modelUsed,
+      agentType: "daily-generator",
+      estimatedCost,
+    });
 
     return generatedPost;
   } catch (error) {

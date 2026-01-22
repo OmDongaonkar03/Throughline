@@ -9,6 +9,11 @@ import {
   ValidationError,
   DatabaseError,
 } from "../../utils/errors.js";
+import {
+  savePlatformPostTokenUsage,
+  calculateEstimatedCost,
+} from "../../lib/token-usage.js";
+import { getModelString } from "../../lib/llm-config.js";
 
 export async function generatePlatformPosts(basePost, userId, prisma) {
   let platformSettings;
@@ -61,6 +66,20 @@ export async function generatePlatformPosts(basePost, userId, prisma) {
           hashtags: adaptedPost.hashtags,
         },
       });
+
+      // Save token usage for this platform adaptation (non-blocking)
+      if (adaptedPost.usage) {
+        const modelUsed = getModelString();
+        const estimatedCost = calculateEstimatedCost(adaptedPost.usage, modelUsed);
+
+        savePlatformPostTokenUsage(prisma, {
+          platformPostId: platformPost.id,
+          usage: adaptedPost.usage,
+          modelUsed,
+          platform: platform.toUpperCase(),
+          estimatedCost,
+        });
+      }
 
       platformPosts.push(platformPost);
     } catch (error) {
@@ -188,6 +207,7 @@ async function generateNewPlatformPosts(basePost, userId, prisma) {
         platform: adaptedPost.platform,
         content: adaptedPost.content,
         hashtags: adaptedPost.hashtags,
+        usage: adaptedPost.usage, // Include usage for saving later
       });
     } catch (error) {
       console.error(`Failed to generate ${platform} post:`, error);
@@ -245,6 +265,21 @@ export async function regeneratePlatformPosts(basePostId, userId, prisma) {
             hashtags: post.hashtags,
           },
         });
+
+        // Save token usage for this platform adaptation
+        if (post.usage) {
+          const modelUsed = getModelString();
+          const estimatedCost = calculateEstimatedCost(post.usage, modelUsed);
+
+          savePlatformPostTokenUsage(prisma, {
+            platformPostId: platformPost.id,
+            usage: post.usage,
+            modelUsed,
+            platform: post.platform.toUpperCase(),
+            estimatedCost,
+          });
+        }
+
         created.push(platformPost);
       }
 
