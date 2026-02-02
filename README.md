@@ -72,12 +72,15 @@ Throughline handles continuity, context, and synthesis.
 ### Backend
 
 ```bash
+npm install
+npx prisma migrate dev
 npm start
 ```
 
 ### Frontend
 
 ```bash
+npm i
 npm run dev
 ```
 
