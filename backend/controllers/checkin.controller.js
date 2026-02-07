@@ -2,7 +2,8 @@ import prisma from "../db/prisma.js";
 import DOMPurify from "dompurify";
 import { JSDOM } from "jsdom";
 import { asyncHandler } from "../middleware/asyncHandler.js";
-import { ValidationError, RateLimitError } from "../utils/errors.js";
+import { ValidationError, RateLimitError, NotFoundError } from "../utils/errors.js";
+import { validateAndParseDate } from "../lib/time.js";
 
 const window = new JSDOM("").window;
 const purify = DOMPurify(window);
@@ -44,10 +45,16 @@ export const createCheckIn = asyncHandler(async (req, res) => {
     throw new RateLimitError("Daily check-in limit reached (24 per day)");
   }
 
+  // Sanitize content - remove all HTML tags and dangerous content
   const sanitizedContent = purify.sanitize(content.trim(), {
     ALLOWED_TAGS: [],
     ALLOWED_ATTR: [],
   });
+
+  // Additional validation after sanitization
+  if (sanitizedContent.length === 0) {
+    throw new ValidationError("Content cannot be empty after sanitization");
+  }
 
   const checkIn = await prisma.checkIn.create({
     data: {
@@ -77,10 +84,11 @@ export const getCheckIns = asyncHandler(async (req, res) => {
     throw new ValidationError("Date parameter is required");
   }
 
-  const targetDate = new Date(date);
-  if (isNaN(targetDate.getTime())) {
-    throw new ValidationError("Invalid date format");
-  }
+  // Use our new date validation
+  const targetDate = validateAndParseDate(date, {
+    allowFuture: false,
+    maxPastYears: 2,
+  });
 
   const startOfDay = new Date(targetDate);
   startOfDay.setHours(0, 0, 0, 0);
