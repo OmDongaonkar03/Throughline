@@ -23,7 +23,6 @@ import { useAuth } from "../context/AuthContext";
 import { cn } from "@/lib/utils";
 import { notificationService } from "@/services/notificationService";
 import { profileService } from "@/services/profileService";
-import { platformService } from "@/services/platformService";
 import { scheduleService } from "@/services/scheduleService";
 import { useNavigate } from "react-router-dom";
 import {
@@ -36,28 +35,9 @@ import {
 
 const settingsSections = [
   { id: "profile", label: "Profile", icon: User, description: "Your personal information" },
-  { id: "platforms", label: "Platforms", icon: Share2, description: "Selected social platforms" },
   { id: "schedule", label: "Schedule", icon: Calendar, description: "Post generation timing" },
   { id: "notifications", label: "Notifications", icon: Bell, description: "How we contact you" },
   { id: "billing", label: "Billing", icon: CreditCard, description: "Manage your subscription" },
-];
-
-const platformsConfig = [
-  { 
-    id: "linkedinEnabled", 
-    label: "LinkedIn", 
-    logo: "platforms/linkedin.png",
-  },
-  { 
-    id: "xEnabled", 
-    label: "X (Twitter)", 
-    logo: "platforms/twitter.png",
-  },
-  { 
-    id: "redditEnabled", 
-    label: "Reddit", 
-    logo: "platforms/reddit.png",
-  },
 ];
 
 const DAYS_OF_WEEK = [
@@ -145,7 +125,6 @@ const Settings = () => {
 
   useEffect(() => {
     fetchNotificationSettings();
-    fetchPlatformSettings();
     fetchScheduleSettings();
   }, []);
 
@@ -166,28 +145,6 @@ const Settings = () => {
       toast({
         title: "Error",
         description: error.message || "Failed to load notification settings",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const fetchPlatformSettings = async () => {
-    try {
-      const settings = await platformService.getSettings(apiRequest);
-      setPlatforms({
-        xEnabled: settings.xEnabled,
-        linkedinEnabled: settings.linkedinEnabled,
-        redditEnabled: settings.redditEnabled,
-      });
-    } catch (error) {
-      console.error("Error fetching platform settings:", error);
-      if (error.message.includes("verify") || error.message.includes("Verification")) {
-        navigate("/auth");
-        return;
-      }
-      toast({
-        title: "Error",
-        description: error.message || "Failed to load platform settings",
         variant: "destructive",
       });
     }
@@ -246,60 +203,6 @@ const Settings = () => {
       });
     } finally {
       setIsLoadingNotifications(false);
-    }
-  };
-
-  const handlePlatformToggle = async (key, value) => {
-    if (!value) {
-      const updatedPlatforms = {
-        ...platforms,
-        [key]: value
-      };
-      const enabledCount = Object.values(updatedPlatforms).filter(Boolean).length;
-      if (enabledCount === 0) {
-        toast({
-          title: "Cannot disable all platforms",
-          description: "At least one platform must be enabled",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-
-    const previousState = { ...platforms };
-    setPlatforms(prev => ({
-      ...prev,
-      [key]: value
-    }));
-
-    try {
-      setIsLoadingPlatforms(true);
-      const updatedSettings = await platformService.updateSettings(apiRequest, {
-        [key]: value,
-      });
-      setPlatforms({
-        xEnabled: updatedSettings.xEnabled,
-        linkedinEnabled: updatedSettings.linkedinEnabled,
-        redditEnabled: updatedSettings.redditEnabled,
-      });
-      toast({
-        title: "Success",
-        description: "Platform settings updated",
-      });
-    } catch (error) {
-      setPlatforms(previousState);
-      console.error("Error updating platform settings:", error);
-      if (error.message.includes("verify") || error.message.includes("Verification")) {
-        navigate("/auth");
-        return;
-      }
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update platform settings",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingPlatforms(false);
     }
   };
 
@@ -542,46 +445,6 @@ const Settings = () => {
                         {isLoadingProfile ? "Saving..." : "Save changes"}
                       </Button>
                     </form>
-                  </motion.div>
-                )}
-
-                {activeSection === "platforms" && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.2 }}
-                    className="space-y-6"
-                  >
-                    <CardHeader className="p-0">
-                      <CardTitle className="text-base">Platform Settings</CardTitle>
-                    </CardHeader>
-                    
-                    <div className="space-y-4">
-                      {platformsConfig.map((platform) => (
-                        <div 
-                          key={platform.id}
-                          className="flex items-center justify-between p-4 rounded-md bg-secondary/50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <img 
-                              src={platform.logo} 
-                              alt={platform.label}
-                              className="w-8 h-8 object-contain rounded-md bg-white p-1"
-                            />
-                            <div>
-                              <p className="text-sm font-medium text-foreground">{platform.label}</p>
-                            </div>
-                          </div>
-                          <Switch
-                            checked={platforms[platform.id]}
-                            onCheckedChange={(checked) => 
-                              handlePlatformToggle(platform.id, checked)
-                            }
-                            disabled={isLoadingPlatforms}
-                          />
-                        </div>
-                      ))}
-                    </div>
                   </motion.div>
                 )}
 

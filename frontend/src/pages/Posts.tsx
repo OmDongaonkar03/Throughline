@@ -3,8 +3,6 @@ import {
   FileText,
   Copy,
   Clock,
-  ChevronDown,
-  ChevronUp,
   RefreshCw,
   Calendar,
   Loader2,
@@ -12,7 +10,7 @@ import {
   ThumbsDown,
   Edit,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,32 +29,14 @@ import {
 import { Label } from "@/components/ui/label";
 import { postsService } from "@/services/postsService";
 
-const PLATFORM_CONFIG = {
-  LINKEDIN: {
-    name: "LinkedIn",
-    logo: "/platforms/linkedin.png",
-    color: "bg-[#0A66C2]/10",
-    textColor: "text-[#0A66C2]"
-  },
-  X: {
-    name: "X (Twitter)",
-    logo: "/platforms/twitter.png",
-    color: "bg-secondary",
-    textColor: "text-foreground"
-  },
-  REDDIT: {
-    name: "Reddit",
-    logo: "/platforms/reddit.png",
-    color: "bg-[#FF4500]/10",
-    textColor: "text-[#FF4500]"
-  }
-};
+const POSTS_PER_PAGE = 10;
 
 const Posts = () => {
-  const [selectedTab, setSelectedTab] = useState("all");
+  const [selectedTab, setSelectedTab] = useState("daily");
   const [posts, setPosts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [expandedPosts, setExpandedPosts] = useState(new Set());
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
   const [regeneratingPosts, setRegeneratingPosts] = useState(new Set());
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -66,31 +46,85 @@ const Posts = () => {
   const [selectedDate, setSelectedDate] = useState("");
   
   // Feedback state
-  const [postFeedback, setPostFeedback] = useState<Record<string, any>>({});
+  const [postFeedback, setPostFeedback] = useState({});
   
   // Edit state
-  const [editingPost, setEditingPost] = useState<any>(null);
+  const [editingPost, setEditingPost] = useState(null);
   const [editContent, setEditContent] = useState("");
-  const [editingPlatformPost, setEditingPlatformPost] = useState<any>(null);
-  const [editPlatformContent, setEditPlatformContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Infinite scroll
+  const observerTarget = useRef(null);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
   
   const { toast } = useToast();
   const { apiRequest } = useAuth();
 
+  // Sync generate type with selected tab
   useEffect(() => {
-    fetchPosts();
+    setGenerateType(selectedTab);
   }, [selectedTab]);
 
-  const fetchPosts = async () => {
+  // Initial load
+  useEffect(() => {
+    setPosts([]);
+    setOffset(0);
+    setHasMore(true);
+    fetchPosts(true);
+  }, [selectedTab]);
+
+  // Infinite scroll observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoading && !isFetchingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => {
+      if (observerTarget.current) {
+        observer.unobserve(observerTarget.current);
+      }
+    };
+  }, [hasMore, isLoading, isFetchingMore, offset]);
+
+  const fetchPosts = async (isInitial = false) => {
     try {
-      setIsLoading(true);
-      const params = selectedTab === "all" ? {} : { type: selectedTab.toUpperCase() };
-      const data = await postsService.getPosts(apiRequest, params);
-      setPosts(data.posts || []);
+      if (isInitial) {
+        setIsLoading(true);
+      } else {
+        setIsFetchingMore(true);
+      }
+
+      const currentOffset = isInitial ? 0 : offset;
       
-      // Load feedback for all posts
-      const feedbackPromises = (data.posts || []).map(async (post: any) => {
+      const params = {
+        type: selectedTab.toUpperCase(),
+        limit: POSTS_PER_PAGE,
+        offset: currentOffset,
+      };
+
+      const data = await postsService.getPosts(apiRequest, params);
+      const newPosts = data.posts || [];
+
+      if (isInitial) {
+        setPosts(newPosts);
+      } else {
+        setPosts(prev => [...prev, ...newPosts]);
+      }
+
+      setHasMore(newPosts.length === POSTS_PER_PAGE);
+      setOffset(currentOffset + newPosts.length);
+      
+      // Load feedback for new posts
+      const feedbackPromises = newPosts.map(async (post) => {
         try {
           const feedbackData = await postsService.getFeedback(apiRequest, post.id);
           return { postId: post.id, feedback: feedbackData.feedback };
@@ -100,11 +134,12 @@ const Posts = () => {
       });
       
       const feedbackResults = await Promise.all(feedbackPromises);
-      const feedbackMap: Record<string, any> = {};
+      const feedbackMap = {};
       feedbackResults.forEach((result) => {
         feedbackMap[result.postId] = result.feedback;
       });
-      setPostFeedback(feedbackMap);
+      
+      setPostFeedback(prev => ({ ...prev, ...feedbackMap }));
     } catch (error) {
       console.error("Error fetching posts:", error);
       toast({
@@ -114,8 +149,15 @@ const Posts = () => {
       });
     } finally {
       setIsLoading(false);
+      setIsFetchingMore(false);
     }
   };
+
+  const loadMore = useCallback(() => {
+    if (!isFetchingMore && hasMore) {
+      fetchPosts(false);
+    }
+  }, [isFetchingMore, hasMore, offset]);
 
   const copyText = (content) => {
     navigator.clipboard.writeText(content);
@@ -125,38 +167,27 @@ const Posts = () => {
     });
   };
 
-  const toggleExpanded = (postId) => {
-    setExpandedPosts(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(postId)) {
-        newSet.delete(postId);
-      } else {
-        newSet.add(postId);
-      }
-      return newSet;
-    });
-  };
-
   const handleRegenerate = async (postId) => {
     try {
       setRegeneratingPosts(prev => new Set(prev).add(postId));
       
-      const result = await postsService.regeneratePlatformPosts(
-        apiRequest,
-        postId
-      );
+      await postsService.regeneratePost(apiRequest, postId);
 
       toast({
         title: "Success",
-        description: `Regenerated ${result.stats.generated} platform post(s)`,
+        description: "Post regenerated successfully",
       });
 
-      await fetchPosts();
+      // Refresh current view
+      setPosts([]);
+      setOffset(0);
+      setHasMore(true);
+      await fetchPosts(true);
     } catch (error) {
       console.error("Error regenerating:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to regenerate posts",
+        description: error.message || "Failed to regenerate post",
         variant: "destructive",
       });
     } finally {
@@ -172,13 +203,13 @@ const Posts = () => {
     try {
       setGenerating(true);
       
-      const data: { date?: string } = {};
+      const data: Record<string, string> = {};
       
       if (selectedDate) {
         data.date = selectedDate;
       }
 
-      const result = await postsService.generatePost(apiRequest, generateType, data);
+      await postsService.generatePost(apiRequest, generateType, data);
 
       toast({
         title: "Success",
@@ -187,7 +218,12 @@ const Posts = () => {
 
       setShowGenerateModal(false);
       setSelectedDate("");
-      await fetchPosts();
+      
+      // Refresh posts
+      setPosts([]);
+      setOffset(0);
+      setHasMore(true);
+      await fetchPosts(true);
     } catch (error) {
       console.error("Error generating:", error);
       toast({
@@ -200,8 +236,7 @@ const Posts = () => {
     }
   };
 
-  // Feedback handlers
-  const handleFeedback = async (postId: string, rating: number) => {
+  const handleFeedback = async (postId, rating) => {
     try {
       await postsService.submitFeedback(apiRequest, postId, rating);
       
@@ -226,20 +261,18 @@ const Posts = () => {
     }
   };
 
-  // Edit handlers
-  const handleEditBasePost = (post: any) => {
+  const handleEditPost = (post) => {
     setEditingPost(post);
     setEditContent(post.content);
   };
 
-  const handleSaveBasePost = async () => {
+  const handleSavePost = async () => {
     if (!editingPost) return;
     
     try {
       setIsSaving(true);
       await postsService.updatePost(apiRequest, editingPost.id, editContent);
       
-      // Update local state
       setPosts(prev => prev.map(p => 
         p.id === editingPost.id 
           ? { ...p, content: editContent }
@@ -264,51 +297,16 @@ const Posts = () => {
     }
   };
 
-  const handleEditPlatformPost = (platformPost: any) => {
-    setEditingPlatformPost(platformPost);
-    setEditPlatformContent(platformPost.content);
-  };
-
-  const handleSavePlatformPost = async () => {
-    if (!editingPlatformPost) return;
-    
-    try {
-      setIsSaving(true);
-      await postsService.updatePlatformPost(
-        apiRequest, 
-        editingPlatformPost.id, 
-        editPlatformContent
-      );
-      
-      // Update local state
-      setPosts(prev => prev.map(p => ({
-        ...p,
-        platformPosts: p.platformPosts?.map(pp =>
-          pp.id === editingPlatformPost.id
-            ? { ...pp, content: editPlatformContent }
-            : pp
-        )
-      })));
-      
-      setEditingPlatformPost(null);
-      
-      toast({
-        title: "Platform post updated",
-        description: "Your changes have been saved.",
-      });
-    } catch (error) {
-      console.error("Error updating platform post:", error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update platform post",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  const formatTime = (dateString) => {
     const date = new Date(dateString);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -316,247 +314,225 @@ const Posts = () => {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
     if (diffHours < 1) return "Just now";
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
     
-    return date.toLocaleDateString();
+    return formatDate(dateString);
   };
+
+  // Group posts by date for timeline
+  const groupedPosts: Record<string, typeof posts> = posts.reduce((acc: Record<string, typeof posts>, post) => {
+    const dateKey = formatDate(post.createdAt);
+    if (!acc[dateKey]) {
+      acc[dateKey] = [];
+    }
+    acc[dateKey].push(post);
+    return acc;
+  }, {});
 
   return (
     <AppLayout>
-      <div className="p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          {/* Header */}
-          <div className="mb-6 sm:mb-8">
-            <h1 className="text-2xl font-medium text-foreground mb-1">Posts</h1>
-            <p className="text-muted-foreground text-sm">Generate and manage your content</p>
+      <div className="min-h-screen bg-background">
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-semibold text-foreground">Posts</h1>
+                <p className="text-sm text-muted-foreground mt-1">Your content timeline</p>
+              </div>
+              <Button 
+                className="gap-2 w-full sm:w-auto" 
+                onClick={() => setShowGenerateModal(true)}
+              >
+                <FileText className="w-4 h-4" />
+                Generate Post
+              </Button>
+            </div>
+            
+            {/* Tabs */}
+            <div className="mt-4">
+              <Tabs value={selectedTab} onValueChange={setSelectedTab}>
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="daily">Daily</TabsTrigger>
+                  <TabsTrigger value="weekly">Weekly</TabsTrigger>
+                  <TabsTrigger value="monthly">Monthly</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
           </div>
+        </div>
 
-          {/* Tabs and Generate Button */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full sm:w-auto">
-              <TabsList className="grid w-full grid-cols-4 sm:w-auto">
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="daily">Daily</TabsTrigger>
-                <TabsTrigger value="weekly">Weekly</TabsTrigger>
-                <TabsTrigger value="monthly">Monthly</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <Button className="gap-2 w-full sm:w-auto" onClick={() => setShowGenerateModal(true)}>
-              <FileText className="w-4 h-4" />
-              Generate Post
-            </Button>
-          </div>
-
-          {/* Posts List */}
+        {/* Timeline Content */}
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 z-0">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
           ) : posts.length === 0 ? (
-            <Card>
-              <CardContent className="py-12">
+            <Card className="max-w-md mx-auto">
+              <CardContent className="py-16">
                 <div className="text-center">
-                  <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No posts yet. Generate your first post!</p>
+                  <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-medium text-foreground mb-2">No posts yet</h3>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Generate your first {selectedTab} post to get started
+                  </p>
+                  <Button onClick={() => setShowGenerateModal(true)} className="gap-2">
+                    <FileText className="w-4 h-4" />
+                    Generate Post
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-4">
-              <AnimatePresence>
-                {posts.map((post) => (
-                  <motion.div
-                    key={post.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <Card>
-                      <CardContent className="p-4 sm:p-6">
-                        {/* Header - Responsive */}
-                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-0 mb-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                              <FileText className="w-5 h-5 text-primary" />
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              {post.generationType && (
-                                <Badge variant="outline" className="text-xs">
-                                  {post.generationType}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditBasePost(post)}
-                              className="gap-2"
-                            >
-                              <Edit className="w-4 h-4" />
-                              <span className="hidden sm:inline">Edit</span>
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRegenerate(post.id)}
-                              disabled={regeneratingPosts.has(post.id)}
-                              className="gap-2"
-                            >
-                              {regeneratingPosts.has(post.id) ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <RefreshCw className="w-4 h-4" />
-                              )}
-                              <span className="hidden sm:inline">Regenerate</span>
-                            </Button>
-                          </div>
-                        </div>
+            <div className="relative pt-4">
+              {/* Timeline Line */}
+              <div className="absolute left-1/2 top-4 bottom-0 w-0.5 bg-border hidden md:block" 
+                   style={{ transform: 'translateX(-50%)' }} />
 
-                        {/* Base Content */}
-                        <div className="mb-4">
-                          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
-                            {post.content}
-                          </p>
-                        </div>
-
-                        {/* Timestamp - Bottom Right */}
-                        <div className="flex items-center justify-end mb-4">
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <Clock className="w-3 h-3" />
-                            <span>{formatDate(post.createdAt)}</span>
-                          </div>
-                        </div>
-
-                        {/* Feedback Buttons */}
-                        <div className="flex gap-2 mb-4 pb-4 border-b border-border">
-                          <Button
-                            size="sm"
-                            variant={postFeedback[post.id]?.rating === 2 ? "default" : "outline"}
-                            onClick={() => handleFeedback(post.id, 2)}
-                            className="gap-2"
+              {/* Posts Timeline */}
+              <div className="space-y-12">
+                {Object.entries(groupedPosts).map(([dateKey, datePosts], groupIndex) => (
+                  <div key={dateKey}>
+                    {/* Posts for this date */}
+                    <div className="space-y-8">
+                      {datePosts.map((post, index) => {
+                        const isLeft = index % 2 === 0;
+                        const globalIndex = posts.findIndex(p => p.id === post.id);
+                        
+                        return (
+                          <motion.div
+                            key={post.id}
+                            initial={{ opacity: 0, x: isLeft ? -20 : 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.3, delay: index * 0.05 }}
+                            className={`relative md:w-[calc(50%-2rem)] ${
+                              isLeft ? 'md:mr-auto md:pr-8' : 'md:ml-auto md:pl-8'
+                            }`}
                           >
-                            <ThumbsUp className="w-4 h-4" />
-                            <span className="hidden sm:inline">{postFeedback[post.id]?.rating === 2 && "Liked"}</span>
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={postFeedback[post.id]?.rating === 1 ? "destructive" : "outline"}
-                            onClick={() => handleFeedback(post.id, 1)}
-                            className="gap-2"
-                          >
-                            <ThumbsDown className="w-4 h-4" />
-                            <span className="hidden sm:inline">{postFeedback[post.id]?.rating === 1 && "Disliked"}</span>
-                          </Button>
-                        </div>
 
-                        {/* Platform Posts Toggle */}
-                        {post.platformPosts && post.platformPosts.length > 0 && (
-                          <>
-                            <button
-                              onClick={() => toggleExpanded(post.id)}
-                              className="flex items-center gap-2 text-sm text-primary hover:text-primary/80 transition-colors mb-3 w-full"
-                            >
-                              {expandedPosts.has(post.id) ? (
-                                <ChevronUp className="w-4 h-4" />
-                              ) : (
-                                <ChevronDown className="w-4 h-4" />
-                              )}
-                              <span>
-                                {expandedPosts.has(post.id) ? "Hide" : "Show"} Platform Versions 
-                                ({post.platformPosts.length})
-                              </span>
-                            </button>
+                            <Card className="overflow-hidden hover:shadow-md transition-shadow">
+                              <CardContent className="p-4 sm:p-5">
+                                {/* Header */}
+                                <div className="flex items-start justify-between gap-3 mb-4">
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                                      <FileText className="w-5 h-5 text-primary" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <Badge variant="outline" className="text-xs">
+                                        {post.type || selectedTab.toUpperCase()}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleEditPost(post)}
+                                      className="h-8 w-8"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleRegenerate(post.id)}
+                                      disabled={regeneratingPosts.has(post.id)}
+                                      className="h-8 w-8"
+                                    >
+                                      {regeneratingPosts.has(post.id) ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        <RefreshCw className="w-4 h-4" />
+                                      )}
+                                    </Button>
+                                  </div>
+                                </div>
 
-                            <AnimatePresence>
-                              {expandedPosts.has(post.id) && (
-                                <motion.div
-                                  initial={{ opacity: 0, height: 0 }}
-                                  animate={{ opacity: 1, height: "auto" }}
-                                  exit={{ opacity: 0, height: 0 }}
-                                  className="space-y-3 mb-4 overflow-hidden"
-                                >
-                                  {post.platformPosts.map((pp) => {
-                                    const platformConfig = PLATFORM_CONFIG[pp.platform];
-                                    return (
-                                      <div
-                                        key={pp.id}
-                                        className="border border-border rounded-lg p-4 bg-muted/30"
-                                      >
-                                        <div className="flex items-center justify-between mb-3">
-                                          <div className="flex items-center gap-3">
-                                            <div className={`w-8 h-8 rounded-md flex items-center justify-center ${platformConfig.color}`}>
-                                              <img 
-                                                src={platformConfig.logo} 
-                                                alt={platformConfig.name}
-                                                className="w-4 h-4"
-                                              />
-                                            </div>
-                                            <span className={`text-sm font-medium ${platformConfig.textColor}`}>
-                                              {platformConfig.name}
-                                            </span>
-                                          </div>
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleEditPlatformPost(pp)}
-                                            className="gap-2"
-                                          >
-                                            <Edit className="w-3 h-3" />
-                                            <span className="hidden sm:inline">Edit</span>
-                                          </Button>
-                                        </div>
-                                        <p className="text-sm text-foreground whitespace-pre-line mb-2">
-                                          {pp.content}
-                                        </p>
-                                        <div className="flex gap-2 mt-3 pt-3 border-t border-border">
-                                          <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="gap-2"
-                                            onClick={() => copyText(pp.content)}
-                                          >
-                                            <Copy className="w-3 h-3" />
-                                            Copy
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </>
-                        )}
+                                {/* Content */}
+                                <div className="mb-4">
+                                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">
+                                    {post.content}
+                                  </p>
+                                </div>
 
-                        {/* Actions */}
-                        <div className="flex items-center gap-2 pt-4 border-t border-border">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-2"
-                            onClick={() => copyText(post.content)}
-                          >
-                            <Copy className="w-3 h-3" />
-                            Copy Base
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
+                                {/* Target Date Info */}
+                                {post.date && (
+                                  <div className="mb-3">
+                                    <p className="text-xs text-muted-foreground">
+                                      Generated for: {formatDate(post.date)}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* Footer */}
+                                <div className="flex items-center justify-between pt-4 border-t border-border">
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleFeedback(post.id, 2)}
+                                      className={`h-8 w-8 p-0 ${
+                                        postFeedback[post.id]?.rating === 2 
+                                          ? 'bg-green-500 hover:bg-green-600 text-white border-green-500' 
+                                          : ''
+                                      }`}
+                                    >
+                                      <ThumbsUp className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleFeedback(post.id, 1)}
+                                      className={`h-8 w-8 p-0 ${
+                                        postFeedback[post.id]?.rating === 1 
+                                          ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground' 
+                                          : ''
+                                      }`}
+                                    >
+                                      <ThumbsDown className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="gap-2 h-8"
+                                      onClick={() => copyText(post.content)}
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                      <span className="hidden sm:inline">Copy</span>
+                                    </Button>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>{formatTime(post.createdAt)}</span>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))}
-              </AnimatePresence>
+              </div>
+
+              {/* Infinite Scroll Loader */}
+              {hasMore && (
+                <div ref={observerTarget} className="flex items-center justify-center py-8">
+                  {isFetchingMore && (
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+              )}
             </div>
           )}
-        </motion.div>
+        </div>
       </div>
 
       {/* Generate Modal */}
@@ -565,7 +541,7 @@ const Posts = () => {
           <DialogHeader>
             <DialogTitle>Generate New Post</DialogTitle>
             <DialogDescription>
-              Choose the type of post to generate.
+              Create a new {generateType} post for your timeline
             </DialogDescription>
           </DialogHeader>
 
@@ -586,24 +562,17 @@ const Posts = () => {
             <div className="space-y-2">
               <Label htmlFor="date">Date (Optional)</Label>
               <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <input
                   id="date"
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 border border-border rounded-md bg-background text-sm"
+                  className="w-full pl-10 pr-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Leave empty for today's date
-              </p>
-            </div>
-
-            {/* Info about platforms */}
-            <div className="rounded-lg bg-muted/50 p-3 border border-border">
-              <p className="text-xs text-muted-foreground">
-                Posts will be generated for all platforms enabled in your settings.
+                Leave empty to use today's date
               </p>
             </div>
           </div>
@@ -638,11 +607,11 @@ const Posts = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Base Post Dialog */}
+      {/* Edit Post Dialog */}
       <Dialog open={!!editingPost} onOpenChange={() => setEditingPost(null)}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Edit Base Post</DialogTitle>
+            <DialogTitle>Edit Post</DialogTitle>
             <DialogDescription>
               Make changes to your post content
             </DialogDescription>
@@ -651,7 +620,8 @@ const Posts = () => {
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
             rows={12}
-            className="font-mono text-sm"
+            className="font-mono text-sm resize-none"
+            placeholder="Enter your post content..."
           />
           <div className="flex justify-end gap-2">
             <Button 
@@ -662,49 +632,8 @@ const Posts = () => {
               Cancel
             </Button>
             <Button 
-              onClick={handleSaveBasePost}
-              disabled={isSaving}
-              className="gap-2"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                "Save Changes"
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Platform Post Dialog */}
-      <Dialog open={!!editingPlatformPost} onOpenChange={() => setEditingPlatformPost(null)}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit Platform Post</DialogTitle>
-            <DialogDescription>
-              {editingPlatformPost && PLATFORM_CONFIG[editingPlatformPost.platform]?.name}
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={editPlatformContent}
-            onChange={(e) => setEditPlatformContent(e.target.value)}
-            rows={12}
-            className="font-mono text-sm"
-          />
-          <div className="flex justify-end gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => setEditingPlatformPost(null)}
-              disabled={isSaving}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleSavePlatformPost}
-              disabled={isSaving}
+              onClick={handleSavePost}
+              disabled={isSaving || !editContent.trim()}
               className="gap-2"
             >
               {isSaving ? (
