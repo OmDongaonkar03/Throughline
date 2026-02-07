@@ -3,7 +3,6 @@ import { createToneExtractorAgent } from './agents/tone-extractor.js';
 import { createDailyGeneratorAgent } from './agents/daily-generator.js';
 import { createWeeklyGeneratorAgent } from './agents/weekly-generator.js';
 import { createMonthlyGeneratorAgent } from './agents/monthly-generator.js';
-import { createPlatformAdapterAgent } from './agents/platform-adapter.js';
 
 // Initialize Mastra with all agents
 export const mastra = new Mastra({
@@ -20,7 +19,6 @@ export {
   createDailyGeneratorAgent,
   createWeeklyGeneratorAgent,
   createMonthlyGeneratorAgent,
-  createPlatformAdapterAgent,
 };
 
 // Tone extraction functions
@@ -46,24 +44,16 @@ export {
   getOrGenerateMonthlyPost,
 } from './agents/monthly-generator.js';
 
-// Platform adaptation functions
-export {
-  adaptForPlatform,
-} from './agents/platform-adapter.js';
-
 // Orchestration functions
 export {
-  // Complete generation (base + platforms)
+  // Complete generation (base posts only)
   generateCompleteDailyPosts,
   generateCompleteWeeklyPosts,
   generateCompleteMonthlyPosts,
   
-  // Platform-specific operations
-  generatePlatformPosts,
-  regeneratePlatformPosts,
-  
-  // Retrieval
-  getPostsWithPlatforms,
+  // Post operations
+  regeneratePost,
+  getPostWithVersions,
   
   // Limits
   canUserRegenerate,

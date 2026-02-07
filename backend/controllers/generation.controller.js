@@ -5,6 +5,7 @@ import {
   generateCompleteDailyPosts,
   generateCompleteWeeklyPosts,
   generateCompleteMonthlyPosts,
+  regeneratePost,
   canUserRegenerate,
   getRegenerationCount,
 } from "../mastra/index.js";
@@ -112,19 +113,9 @@ export const generateDaily = asyncHandler(async (req, res) => {
       content: result.basePost.content,
       metadata: result.basePost.metadata,
       version: result.basePost.version,
+      type: result.basePost.type,
       createdAt: result.basePost.createdAt,
     },
-    platformPosts: result.platformPosts.map((pp) => ({
-      id: pp.id,
-      platform: pp.platform,
-      content: pp.content,
-      hashtags: pp.hashtags,
-    })),
-    stats: {
-      generated: result.generated,
-      failed: result.failed,
-    },
-    errors: result.errors,
   });
 });
 
@@ -142,9 +133,6 @@ export const getDaily = asyncHandler(async (req, res) => {
       date: startOfTargetDay,
       isLatest: true,
     },
-    include: {
-      platformPosts: true,
-    },
   });
 
   if (!post) {
@@ -160,16 +148,10 @@ export const getDaily = asyncHandler(async (req, res) => {
       content: post.content,
       metadata: post.metadata,
       version: post.version,
+      type: post.type,
       generationType: post.generationType,
       createdAt: post.createdAt,
     },
-    platformPosts: post.platformPosts.map((pp) => ({
-      id: pp.id,
-      platform: pp.platform,
-      content: pp.content,
-      hashtags: pp.hashtags,
-      createdAt: pp.createdAt,
-    })),
   });
 });
 
@@ -206,19 +188,9 @@ export const generateWeekly = asyncHandler(async (req, res) => {
       content: result.basePost.content,
       metadata: result.basePost.metadata,
       version: result.basePost.version,
+      type: result.basePost.type,
       createdAt: result.basePost.createdAt,
     },
-    platformPosts: result.platformPosts.map((pp) => ({
-      id: pp.id,
-      platform: pp.platform,
-      content: pp.content,
-      hashtags: pp.hashtags,
-    })),
-    stats: {
-      generated: result.generated,
-      failed: result.failed,
-    },
-    errors: result.errors,
   });
 });
 
@@ -236,9 +208,6 @@ export const getWeekly = asyncHandler(async (req, res) => {
       date: weekStart,
       isLatest: true,
     },
-    include: {
-      platformPosts: true,
-    },
   });
 
   if (!post) {
@@ -252,16 +221,10 @@ export const getWeekly = asyncHandler(async (req, res) => {
       content: post.content,
       metadata: post.metadata,
       version: post.version,
+      type: post.type,
       generationType: post.generationType,
       createdAt: post.createdAt,
     },
-    platformPosts: post.platformPosts.map((pp) => ({
-      id: pp.id,
-      platform: pp.platform,
-      content: pp.content,
-      hashtags: pp.hashtags,
-      createdAt: pp.createdAt,
-    })),
   });
 });
 
@@ -298,19 +261,9 @@ export const generateMonthly = asyncHandler(async (req, res) => {
       content: result.basePost.content,
       metadata: result.basePost.metadata,
       version: result.basePost.version,
+      type: result.basePost.type,
       createdAt: result.basePost.createdAt,
     },
-    platformPosts: result.platformPosts.map((pp) => ({
-      id: pp.id,
-      platform: pp.platform,
-      content: pp.content,
-      hashtags: pp.hashtags,
-    })),
-    stats: {
-      generated: result.generated,
-      failed: result.failed,
-    },
-    errors: result.errors,
   });
 });
 
@@ -328,9 +281,6 @@ export const getMonthly = asyncHandler(async (req, res) => {
       date: monthStart,
       isLatest: true,
     },
-    include: {
-      platformPosts: true,
-    },
   });
 
   if (!post) {
@@ -344,16 +294,82 @@ export const getMonthly = asyncHandler(async (req, res) => {
       content: post.content,
       metadata: post.metadata,
       version: post.version,
+      type: post.type,
       generationType: post.generationType,
       createdAt: post.createdAt,
     },
-    platformPosts: post.platformPosts.map((pp) => ({
-      id: pp.id,
-      platform: pp.platform,
-      content: pp.content,
-      hashtags: pp.hashtags,
-      createdAt: pp.createdAt,
-    })),
+  });
+});
+
+export const regeneratePostById = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { postId } = req.params;
+
+  if (!isLLMConfigured()) {
+    throw new LLMError("LLM provider not configured.", 503);
+  }
+
+  const canRegen = await canUserRegenerate(userId, prisma);
+  if (!canRegen) {
+    const stats = await getRegenerationCount(userId, prisma);
+    throw new RateLimitError(
+      `Daily regeneration limit reached (3 per day). Limit: ${stats.limit}, Used: ${stats.used}, Remaining: ${stats.remaining}`
+    );
+  }
+
+  const result = await regeneratePost(postId, userId, prisma);
+
+  res.json({
+    message: "Post regenerated successfully",
+    post: {
+      id: result.basePost.id,
+      date: result.basePost.date,
+      content: result.basePost.content,
+      metadata: result.basePost.metadata,
+      version: result.basePost.version,
+      type: result.basePost.type,
+      createdAt: result.basePost.createdAt,
+    },
+  });
+});
+
+export const updatePostById = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { postId } = req.params;
+  const { content } = req.body;
+
+  if (!content || content.trim() === "") {
+    throw new ValidationError("Content is required");
+  }
+
+  const post = await prisma.generatedPost.findFirst({
+    where: {
+      id: postId,
+      userId,
+    },
+  });
+
+  if (!post) {
+    throw new NotFoundError("Post not found or does not belong to you");
+  }
+
+  const updatedPost = await prisma.generatedPost.update({
+    where: {
+      id: postId,
+    },
+    data: {
+      content: content.trim(),
+      updatedAt: new Date(),
+    },
+  });
+
+  res.json({
+    message: "Post updated successfully",
+    post: {
+      id: updatedPost.id,
+      content: updatedPost.content,
+      updatedAt: updatedPost.updatedAt,
+    },
   });
 });
 
@@ -400,15 +416,6 @@ export const getAllPosts = asyncHandler(async (req, res) => {
       version: true,
       generationType: true,
       createdAt: true,
-      platformPosts: {
-        select: {
-          id: true,
-          platform: true,
-          content: true,
-          hashtags: true,
-          createdAt: true,
-        },
-      },
     },
   });
 

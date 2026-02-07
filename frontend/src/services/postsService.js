@@ -31,7 +31,6 @@ export const postsService = {
 
   /**
    * Generate a new post (daily/weekly/monthly)
-   * Uses platforms from user's settings automatically
    * @param {Function} apiRequest - The authenticated API request function from AuthContext
    * @param {string} type - Post type ('daily', 'weekly', 'monthly')
    * @param {Object} data - Generation data (date only)
@@ -56,15 +55,14 @@ export const postsService = {
   },
 
   /**
-   * Regenerate platform posts for a base post
-   * Uses all currently enabled platforms from user's settings
+   * Regenerate a base post (creates a new version)
    * @param {Function} apiRequest - The authenticated API request function from AuthContext
    * @param {string} postId - The base post ID
-   * @returns {Promise<Object>} Regenerated platform posts
+   * @returns {Promise<Object>} Regenerated post
    */
-  regeneratePlatformPosts: async (apiRequest, postId) => {
+  regeneratePost: async (apiRequest, postId) => {
     const response = await apiRequest(
-      `${API_URL}/platform/posts/${postId}/generate`,
+      `${API_URL}/generation/posts/${postId}/regenerate`,
       {
         method: "POST",
         headers: {
@@ -76,7 +74,7 @@ export const postsService = {
     const result = await response.json();
 
     if (!response.ok) {
-      throw new Error(result.message || "Failed to regenerate platform posts");
+      throw new Error(result.message || "Failed to regenerate post");
     }
 
     return result;
@@ -106,7 +104,7 @@ export const postsService = {
    * @returns {Promise<Object>} Updated post
    */
   updatePost: async (apiRequest, postId, content) => {
-    const response = await apiRequest(`${API_URL}/platform/posts/base/${postId}`, {
+    const response = await apiRequest(`${API_URL}/generation/posts/${postId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -118,34 +116,6 @@ export const postsService = {
 
     if (!response.ok) {
       throw new Error(result.message || "Failed to update post");
-    }
-
-    return result;
-  },
-
-  /**
-   * Update a platform post content (manual edit)
-   * @param {Function} apiRequest - The authenticated API request function from AuthContext
-   * @param {string} platformPostId - The platform post ID
-   * @param {string} content - Updated content
-   * @returns {Promise<Object>} Updated platform post
-   */
-  updatePlatformPost: async (apiRequest, platformPostId, content) => {
-    const response = await apiRequest(
-      `${API_URL}/platform/posts/platform/${platformPostId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ content }),
-      }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.message || "Failed to update platform post");
     }
 
     return result;

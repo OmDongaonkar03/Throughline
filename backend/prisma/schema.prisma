@@ -28,7 +28,6 @@ model User {
   generationSchedule   GenerationSchedule?
   generationJobs       GenerationJob[]
   postFeedback         PostFeedback[]
-  platformSettings     UserPlatformSettings?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   
@@ -136,10 +135,6 @@ model GeneratedPost {
   generationType GenerationType  @default(AUTO)
   
   modelUsed      String?         // e.g., "openai/gpt-4o-mini"
-  tokensUsed     Int?            // Deprecated - use tokenUsage relation
-  
-  // Platform adaptations
-  platformPosts  PlatformPost[]
   
   // Token usage tracking
   tokenUsage     TokenUsage[]
@@ -152,33 +147,12 @@ model GeneratedPost {
   @@index([date])
 }
 
-model PlatformPost {
-  id            String         @id @default(cuid())
-  postId        String
-  post          GeneratedPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
-  
-  platform      Platform
-  content       String         @db.Text
-  hashtags      Json?          // Array of hashtags
-  
-  // Token usage tracking
-  tokenUsage    TokenUsage[]
-  
-  createdAt     DateTime       @default(now())
-  
-  @@unique([postId, platform])
-  @@index([postId])
-}
-
 model TokenUsage {
   id                String   @id @default(cuid())
   
-  // Polymorphic relation - links to EITHER GeneratedPost OR PlatformPost
-  generatedPostId   String?
-  generatedPost     GeneratedPost? @relation(fields: [generatedPostId], references: [id], onDelete: Cascade)
-  
-  platformPostId    String?
-  platformPost      PlatformPost? @relation(fields: [platformPostId], references: [id], onDelete: Cascade)
+  // Links to GeneratedPost only (platform posts removed)
+  generatedPostId   String
+  generatedPost     GeneratedPost @relation(fields: [generatedPostId], references: [id], onDelete: Cascade)
   
   // Token counts
   promptTokens      Int
@@ -190,39 +164,14 @@ model TokenUsage {
   estimatedCost     Float?
   
   // Context - identifies which agent was used
-  agentType         String  // "daily-generator", "weekly-generator", "monthly-generator", "platform-adapter", "tone-extractor"
-  
-  // Additional context for platform posts
-  platform          String?  // "X", "LINKEDIN", "REDDIT" (null for base posts)
+  agentType         String  // "daily-generator", "weekly-generator", "monthly-generator", "tone-extractor"
   
   // Timestamps
   createdAt         DateTime @default(now())
   
   @@index([generatedPostId])
-  @@index([platformPostId])
   @@index([agentType])
   @@index([createdAt])
-}
-
-model UserPlatformSettings {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  xEnabled       Boolean @default(false)
-  linkedinEnabled Boolean @default(true)  // Default enabled
-  redditEnabled  Boolean @default(false)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@index([userId])
-}
-
-enum Platform {
-  X
-  LINKEDIN
-  REDDIT
 }
 
 enum PostType {
