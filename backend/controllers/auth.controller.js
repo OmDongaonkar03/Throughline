@@ -138,15 +138,6 @@ export const signup = asyncHandler(async (req, res) => {
       },
     });
 
-    await tx.userPlatformSettings.create({
-      data: {
-        userId: user.id,
-        xEnabled: false,
-        linkedinEnabled: true,
-        redditEnabled: false,
-      },
-    });
-
     await tx.notificationSettings.create({
       data: {
         userId: user.id,
@@ -393,15 +384,6 @@ export const googleCallback = asyncHandler(async (req, res) => {
             monthlyDay: 28,
             monthlyTime: "20:00",
             timezone: process.env.TZ || "Asia/Kolkata",
-          },
-        });
-
-        await tx.userPlatformSettings.create({
-          data: {
-            userId: newUser.id,
-            xEnabled: false,
-            linkedinEnabled: true,
-            redditEnabled: false,
           },
         });
 
