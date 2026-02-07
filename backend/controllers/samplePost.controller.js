@@ -1,4 +1,6 @@
 import prisma from "../db/prisma.js";
+import DOMPurify from "dompurify";
+import { JSDOM } from "jsdom";
 import { updateToneProfile } from "../mastra/index.js";
 import { isLLMConfigured } from "../lib/llm-config.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
@@ -7,6 +9,9 @@ import {
   NotFoundError,
   AuthorizationError,
 } from "../utils/errors.js";
+
+const window = new JSDOM("").window;
+const purify = DOMPurify(window);
 
 const MAX_SAMPLE_POSTS = 5;
 
@@ -50,10 +55,21 @@ export const createSamplePost = asyncHandler(async (req, res) => {
     );
   }
 
+  // Sanitize content - remove all HTML tags and dangerous content
+  const sanitizedContent = purify.sanitize(content.trim(), {
+    ALLOWED_TAGS: [],
+    ALLOWED_ATTR: [],
+  });
+
+  // Additional validation after sanitization
+  if (sanitizedContent.length === 0) {
+    throw new ValidationError("Content cannot be empty after sanitization");
+  }
+
   const samplePost = await prisma.samplePost.create({
     data: {
       userId,
-      content: content.trim(),
+      content: sanitizedContent,
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -89,10 +105,21 @@ export const updateSamplePost = asyncHandler(async (req, res) => {
     throw new AuthorizationError("Unauthorized");
   }
 
+  // Sanitize content - remove all HTML tags and dangerous content
+  const sanitizedContent = purify.sanitize(content.trim(), {
+    ALLOWED_TAGS: [],
+    ALLOWED_ATTR: [],
+  });
+
+  // Additional validation after sanitization
+  if (sanitizedContent.length === 0) {
+    throw new ValidationError("Content cannot be empty after sanitization");
+  }
+
   const updatedPost = await prisma.samplePost.update({
     where: { id },
     data: {
-      content: content.trim(),
+      content: sanitizedContent,
       updatedAt: new Date(),
     },
   });
