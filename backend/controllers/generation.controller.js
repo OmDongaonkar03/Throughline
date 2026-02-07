@@ -1,4 +1,6 @@
 import prisma from "../db/prisma.js";
+import DOMPurify from "dompurify";
+import { JSDOM } from "jsdom";
 import {
   getToneProfile,
   updateToneProfile,
@@ -9,10 +11,19 @@ import {
   canUserRegenerate,
   getRegenerationCount,
 } from "../mastra/index.js";
-import { getToday, startOfDay, startOfWeek, startOfMonth } from "../lib/time.js";
+import { 
+  getToday, 
+  startOfDay, 
+  startOfWeek, 
+  startOfMonth,
+  validatePostDate 
+} from "../lib/time.js";
 import { isLLMConfigured, getAvailableProviders } from "../lib/llm-config.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { ValidationError, NotFoundError, RateLimitError, LLMError } from "../utils/errors.js";
+
+const window = new JSDOM("").window;
+const purify = DOMPurify(window);
 
 export const extractTone = asyncHandler(async (req, res) => {
   const userId = req.user.id;
@@ -88,7 +99,10 @@ export const generateDaily = asyncHandler(async (req, res) => {
     );
   }
 
-  const targetDate = date ? new Date(date) : getToday();
+  // Validate date if provided
+  const targetDate = date 
+    ? validatePostDate(date, 'DAILY')
+    : getToday();
 
   const canRegen = await canUserRegenerate(userId, prisma);
   if (!canRegen) {
@@ -123,7 +137,11 @@ export const getDaily = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { date } = req.params;
 
-  const targetDate = date ? new Date(date) : getToday();
+  // Validate date
+  const targetDate = date 
+    ? validatePostDate(date, 'DAILY')
+    : getToday();
+  
   const startOfTargetDay = startOfDay(targetDate);
 
   const post = await prisma.generatedPost.findFirst({
@@ -163,7 +181,10 @@ export const generateWeekly = asyncHandler(async (req, res) => {
     throw new LLMError("LLM provider not configured.", 503);
   }
 
-  const targetDate = date ? new Date(date) : new Date();
+  // Validate date
+  const targetDate = date 
+    ? validatePostDate(date, 'WEEKLY')
+    : new Date();
 
   const canRegen = await canUserRegenerate(userId, prisma);
   if (!canRegen) {
@@ -198,7 +219,11 @@ export const getWeekly = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { date } = req.params;
 
-  const targetDate = date ? new Date(date) : new Date();
+  // Validate date
+  const targetDate = date 
+    ? validatePostDate(date, 'WEEKLY')
+    : new Date();
+    
   const weekStart = startOfWeek(targetDate);
 
   const post = await prisma.generatedPost.findFirst({
@@ -236,7 +261,10 @@ export const generateMonthly = asyncHandler(async (req, res) => {
     throw new LLMError("LLM provider not configured.", 503);
   }
 
-  const targetDate = date ? new Date(date) : new Date();
+  // Validate date
+  const targetDate = date 
+    ? validatePostDate(date, 'MONTHLY')
+    : new Date();
 
   const canRegen = await canUserRegenerate(userId, prisma);
   if (!canRegen) {
@@ -271,7 +299,11 @@ export const getMonthly = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { date } = req.params;
 
-  const targetDate = date ? new Date(date) : new Date();
+  // Validate date
+  const targetDate = date 
+    ? validatePostDate(date, 'MONTHLY')
+    : new Date();
+    
   const monthStart = startOfMonth(targetDate);
 
   const post = await prisma.generatedPost.findFirst({
@@ -342,6 +374,16 @@ export const updatePostById = asyncHandler(async (req, res) => {
     throw new ValidationError("Content is required");
   }
 
+  // Sanitize user-edited content
+  const sanitizedContent = purify.sanitize(content.trim(), {
+    ALLOWED_TAGS: [],
+    ALLOWED_ATTR: [],
+  });
+
+  if (sanitizedContent.length === 0) {
+    throw new ValidationError("Content cannot be empty after sanitization");
+  }
+
   const post = await prisma.generatedPost.findFirst({
     where: {
       id: postId,
@@ -358,7 +400,7 @@ export const updatePostById = asyncHandler(async (req, res) => {
       id: postId,
     },
     data: {
-      content: content.trim(),
+      content: sanitizedContent,
       updatedAt: new Date(),
     },
   });

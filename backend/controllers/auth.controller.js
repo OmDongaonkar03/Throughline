@@ -728,7 +728,9 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   const hashedPassword = await hashPassword(newPassword);
 
-  await prisma.$transaction(async (tx) => {
+  // Use transaction with atomic update to prevent token reuse
+  const result = await prisma.$transaction(async (tx) => {
+    // Update user password
     await tx.user.update({
       where: { id: storedToken.userId },
       data: {
@@ -737,14 +739,26 @@ export const resetPassword = asyncHandler(async (req, res) => {
       },
     });
 
-    await tx.passwordResetToken.update({
-      where: { tokenHash },
+    // Mark token as used atomically - only updates if not already used
+    const tokenUpdate = await tx.passwordResetToken.updateMany({
+      where: { 
+        tokenHash,
+        used: false, // Only update if not already used
+      },
       data: { used: true },
     });
 
+    // If no rows were updated, token was already used (race condition)
+    if (tokenUpdate.count === 0) {
+      throw new AuthenticationError('Reset token has already been used');
+    }
+
+    // Invalidate all existing sessions
     await tx.refreshToken.deleteMany({
       where: { userId: storedToken.userId },
     });
+    
+    return tokenUpdate;
   });
 
   res.json({
