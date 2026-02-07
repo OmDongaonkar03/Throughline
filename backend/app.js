@@ -21,6 +21,7 @@ import toneProfileRoutes from "./routes/toneProfile.js";
 import generationRoutes from "./routes/generation.js";
 import feedbackRoutes from "./routes/feedback.js";
 import scheduleRoutes from "./routes/schedule.js";
+import healthRoutes from "./routes/health.js";
 
 import {
   globalLimiter,
@@ -64,10 +65,7 @@ app.use("/tone", toneProfileRoutes);
 app.use("/generation", generationRoutes);
 app.use("/feedback", feedbackRoutes);
 app.use("/schedule", scheduleRoutes);
-
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
-});
+app.use("/health", healthRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
