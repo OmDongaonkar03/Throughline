@@ -4,10 +4,6 @@ import { JSDOM } from "jsdom";
 import {
   getToneProfile,
   updateToneProfile,
-  generateCompleteDailyPosts,
-  generateCompleteWeeklyPosts,
-  generateCompleteMonthlyPosts,
-  regeneratePost,
   canUserRegenerate,
   getRegenerationCount,
 } from "../mastra/index.js";
@@ -21,6 +17,7 @@ import {
 import { isLLMConfigured, getAvailableProviders } from "../lib/llm-config.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { ValidationError, NotFoundError, RateLimitError, LLMError } from "../utils/errors.js";
+import { addPostGenerationJob, getJobStatus } from "../queues/index.js";
 
 const window = new JSDOM("").window;
 const purify = DOMPurify(window);
@@ -112,24 +109,18 @@ export const generateDaily = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = await generateCompleteDailyPosts(
+  // Add job to queue instead of generating directly
+  const job = await addPostGenerationJob({
     userId,
-    targetDate,
-    prisma,
-    true
-  );
+    type: 'DAILY',
+    date: targetDate,
+    isManual: true,
+  });
 
   res.json({
-    message: "Daily post generated successfully",
-    post: {
-      id: result.basePost.id,
-      date: result.basePost.date,
-      content: result.basePost.content,
-      metadata: result.basePost.metadata,
-      version: result.basePost.version,
-      type: result.basePost.type,
-      createdAt: result.basePost.createdAt,
-    },
+    message: "Daily post generation started",
+    jobId: job.id,
+    status: "queued",
   });
 });
 
@@ -194,24 +185,18 @@ export const generateWeekly = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = await generateCompleteWeeklyPosts(
+  // Add job to queue
+  const job = await addPostGenerationJob({
     userId,
-    targetDate,
-    prisma,
-    true
-  );
+    type: 'WEEKLY',
+    date: targetDate,
+    isManual: true,
+  });
 
   res.json({
-    message: "Weekly post generated successfully",
-    post: {
-      id: result.basePost.id,
-      date: result.basePost.date,
-      content: result.basePost.content,
-      metadata: result.basePost.metadata,
-      version: result.basePost.version,
-      type: result.basePost.type,
-      createdAt: result.basePost.createdAt,
-    },
+    message: "Weekly post generation started",
+    jobId: job.id,
+    status: "queued",
   });
 });
 
@@ -274,24 +259,18 @@ export const generateMonthly = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = await generateCompleteMonthlyPosts(
+  // Add job to queue
+  const job = await addPostGenerationJob({
     userId,
-    targetDate,
-    prisma,
-    true
-  );
+    type: 'MONTHLY',
+    date: targetDate,
+    isManual: true,
+  });
 
   res.json({
-    message: "Monthly post generated successfully",
-    post: {
-      id: result.basePost.id,
-      date: result.basePost.date,
-      content: result.basePost.content,
-      metadata: result.basePost.metadata,
-      version: result.basePost.version,
-      type: result.basePost.type,
-      createdAt: result.basePost.createdAt,
-    },
+    message: "Monthly post generation started",
+    jobId: job.id,
+    status: "queued",
   });
 });
 
@@ -349,19 +328,31 @@ export const regeneratePostById = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = await regeneratePost(postId, userId, prisma);
+  // Verify post belongs to user
+  const post = await prisma.generatedPost.findFirst({
+    where: {
+      id: postId,
+      userId,
+    },
+  });
+
+  if (!post) {
+    throw new NotFoundError("Post not found or does not belong to you");
+  }
+
+  // Add regeneration job to queue
+  const job = await addPostGenerationJob({
+    userId,
+    type: 'REGENERATE',
+    date: post.date,
+    isManual: true,
+    postId,
+  });
 
   res.json({
-    message: "Post regenerated successfully",
-    post: {
-      id: result.basePost.id,
-      date: result.basePost.date,
-      content: result.basePost.content,
-      metadata: result.basePost.metadata,
-      version: result.basePost.version,
-      type: result.basePost.type,
-      createdAt: result.basePost.createdAt,
-    },
+    message: "Post regeneration started",
+    jobId: job.id,
+    status: "queued",
   });
 });
 
@@ -481,5 +472,30 @@ export const getConfig = asyncHandler(async (req, res) => {
     configured,
     providers,
     mode: process.env.MODE || "self-hosted",
+  });
+});
+
+export const getJobStatusById = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { jobId } = req.params;
+
+  const jobStatus = await getJobStatus(jobId);
+
+  if (!jobStatus) {
+    throw new NotFoundError("Job not found");
+  }
+
+  // Verify job belongs to user
+  if (jobStatus.data.userId !== userId) {
+    throw new NotFoundError("Job not found");
+  }
+
+  res.json({
+    jobId: jobStatus.id,
+    state: jobStatus.state,
+    progress: jobStatus.progress,
+    result: jobStatus.returnvalue,
+    error: jobStatus.failedReason,
+    attemptsMade: jobStatus.attemptsMade,
   });
 });

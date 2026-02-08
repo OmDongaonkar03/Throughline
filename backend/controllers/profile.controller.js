@@ -10,6 +10,7 @@ import {
   ConflictError,
   RateLimitError,
 } from "../utils/errors.js";
+import { invalidateUserCache } from "../services/cache.service.js";
 
 const sendVerificationEmail = async (user, newEmail = null) => {
   const emailToVerify = newEmail || user.email;
@@ -172,6 +173,8 @@ export const updateProfileData = asyncHandler(async (req, res) => {
     },
   });
 
+  await invalidateUserCache(userId);
+
   res.json({
     message: "Profile updated successfully",
     user: updatedUser,
@@ -261,9 +264,47 @@ export const verifyUser = asyncHandler(async (req, res) => {
     return user;
   });
 
+  await invalidateUserCache(decoded.userId);
+
   res.json({ 
     message: "Email verified successfully",
     user: updatedUser,
     verified: true,
   });
+});
+
+export const getProfile = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+
+  // Try to get from cache first
+  const { getCachedUserProfile, setCachedUserProfile } = await import("../services/cache.service.js");
+  
+  let user = await getCachedUserProfile(userId);
+
+  if (!user) {
+    // Cache miss - fetch from database
+    user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        bio: true,
+        profilePhoto: true,
+        verified: true,
+        hasCompletedOnboarding: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundError("User not found");
+    }
+
+    // Store in cache
+    await setCachedUserProfile(userId, user);
+  }
+
+  res.json({ user });
 });

@@ -71,8 +71,7 @@ export const detailedHealthCheck = async (req, res) => {
   // Check 3: Email Configuration
   const emailConfigured =
     process.env.MAIL_HOST &&
-    process.env.MAIL_USER &&
-    process.env.MAIL_PASS;
+    process.env.MAIL_USER;
 
   healthStatus.checks.email = {
     status: emailConfigured ? "healthy" : "degraded",

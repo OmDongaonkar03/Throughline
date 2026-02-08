@@ -18,6 +18,8 @@ try {
 
 import app from './app.js';
 import { startScheduler, stopScheduler } from './utils/scheduler.js';
+import { setupBullBoard } from './queues/index.js';
+import { closeRedisConnection } from './utils/redis.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -28,6 +30,15 @@ const server = app.listen(PORT, () => {
   console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
   console.log('='.repeat(60));
   
+  // Initialize Bull Board for queue monitoring
+  try {
+    const serverAdapter = setupBullBoard();
+    app.use('/admin/queues', serverAdapter.getRouter());
+    console.log('[Server] Bull Board dashboard available at /admin/queues');
+  } catch (error) {
+    console.error('[Server] Failed to setup Bull Board:', error);
+  }
+  
   // Start the job scheduler
   try {
     startScheduler();
@@ -37,7 +48,7 @@ const server = app.listen(PORT, () => {
 });
 
 // Graceful shutdown
-const gracefulShutdown = (signal) => {
+const gracefulShutdown = async (signal) => {
   console.log(`\n${signal} signal received: closing HTTP server`);
   
   // Stop cron jobs
@@ -46,6 +57,14 @@ const gracefulShutdown = (signal) => {
     console.log('Cron scheduler stopped');
   } catch (error) {
     console.error('Error stopping scheduler:', error);
+  }
+  
+  // Close Redis connection
+  try {
+    await closeRedisConnection();
+    console.log('Redis connection closed');
+  } catch (error) {
+    console.error('Error closing Redis:', error);
   }
   
   // Close server

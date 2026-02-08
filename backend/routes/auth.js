@@ -6,6 +6,8 @@ import {
   refresh,
   me,
   logout,
+  verifyEmail,          // ADD THIS
+  resendVerification,   // ADD THIS
   forgotPassword,
   validateResetToken,
   resetPassword,
@@ -18,6 +20,8 @@ const router = express.Router();
 router.post("/signup", validate(schemas.signup), signup);
 router.post("/login", validate(schemas.login), login);
 router.get("/google/callback", googleCallback);
+router.post("/verify-email", verifyEmail);
+router.post("/resend-verification", resendVerification);
 router.post("/refresh", refresh);
 router.get("/me", me);
 router.post("/logout", logout);

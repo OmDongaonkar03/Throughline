@@ -1,4 +1,6 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import RedisStore from "rate-limit-redis";
+import redis from "../utils/redis.js";
 import { RateLimitError } from "../utils/errors.js";
 
 /**
@@ -21,6 +23,16 @@ const skipInDevelopment = (req) => {
 };
 
 /**
+ * Ensures TTL is set atomically with counter increment
+ */
+const createRedisStore = (prefix) => {
+  return new RedisStore({
+    sendCommand: (...args) => redis.call(...args),
+    prefix,
+  });
+};
+
+/**
  * Global rate limiter - applies to all requests
  * 150 requests per 15 minutes per IP
  */
@@ -28,12 +40,13 @@ export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 150,
   message: "Too many requests from this IP, please try again later.",
-  standardHeaders: true, // Return rate limit info in RateLimit-* headers
-  legacyHeaders: false, // Disable X-RateLimit-* headers
+  standardHeaders: true,
+  legacyHeaders: false,
   handler: createRateLimitHandler(
     "Too many requests from this IP, please try again later.",
   ),
   skip: skipInDevelopment,
+  store: createRedisStore("rl:global:"),
 });
 
 /**
@@ -50,6 +63,7 @@ export const authLimiter = rateLimit({
     "Too many authentication attempts, please try again later.",
   ),
   skip: skipInDevelopment,
+  store: createRedisStore("rl:auth:"),
 });
 
 /**
@@ -69,6 +83,7 @@ export const llmLimiter = rateLimit({
   keyGenerator: (req) => {
     return req.user?.id || ipKeyGenerator(req);
   },
+  store: createRedisStore("rl:llm:"),
 });
 
 /**
@@ -83,4 +98,5 @@ export const uploadLimiter = rateLimit({
     "Too many upload requests, please try again later.",
   ),
   skip: skipInDevelopment,
+  store: createRedisStore("rl:upload:"),
 });
