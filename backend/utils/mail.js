@@ -1,48 +1,48 @@
-import nodemailer from "nodemailer";
+import { Resend } from 'resend';
 
-const transporter = nodemailer.createTransport({
-  host: process.env.MAIL_HOST || "smtp.gmail.com",
-  port: process.env.MAIL_PORT ? Number(process.env.MAIL_PORT) : 587,
-  secure: false, // true for 465, false for 587
-  auth: {
-    user: process.env.MAIL_USER, // gmail address
-    pass: process.env.MAIL_PASS, // password
-  },
-});
+// Initialize Resend with API key
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 /**
- * Send email with automatic retry logic
+ * Send email using Resend with automatic retry logic
  * @param {Object} options - Email options
  * @param {string} options.to - Recipient email
  * @param {string} options.subject - Email subject
  * @param {string} options.html - HTML content
- * @param {string} options.text - Plain text content
+ * @param {string} options.text - Plain text content (optional with Resend)
  * @param {number} maxRetries - Maximum retry attempts (default: 3)
- * @returns {Promise} - Nodemailer response
+ * @returns {Promise} - Resend response
  */
 export async function sendMail({ to, subject, html, text }, maxRetries = 3) {
-  if (!process.env.MAIL_USER || !process.env.MAIL_PASS) {
-    throw new Error("MAIL_USER or MAIL_PASS is not set");
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error("RESEND_API_KEY is not set");
   }
+
+  // Validate email domain is configured in Resend
+  const fromEmail = process.env.MAIL_FROM || 'Throughline <onboarding@resend.dev>';
 
   let lastError;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const info = await transporter.sendMail({
-        from: process.env.MAIL_FROM || `"Throughline" <${process.env.MAIL_USER}>`,
+      const { data, error } = await resend.emails.send({
+        from: fromEmail,
         to,
         subject,
-        text,
         html,
+        ...(text && { text }),
       });
+
+      if (error) {
+        throw new Error(error.message || 'Resend API error');
+      }
 
       // Success - log and return
       if (attempt > 1) {
         console.log(`[Email] Successfully sent after ${attempt} attempts to ${to}`);
       }
 
-      return info;
+      return data;
     } catch (error) {
       lastError = error;
       

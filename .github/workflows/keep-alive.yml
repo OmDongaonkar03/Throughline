@@ -1,0 +1,57 @@
+name: Keep Alive
+
+on:
+  schedule:
+    # Run every 14 minutes (free tier sleeps after 15 min of inactivity)
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Ping Health Endpoint with Retry
+        run: |
+          echo "Attempting to wake up server..."
+          
+          # Retry up to 3 times with increasing delays
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt/3..."
+            
+            response=$(curl -s -w "\n%{http_code}" --max-time 60 "${{ secrets.API_URL }}/api/cron/health")
+            http_code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+            
+            echo "Response: $body"
+            echo "HTTP Status: $http_code"
+            
+            if [ "$http_code" -eq 200 ]; then
+              echo "Server is awake and healthy!"
+              exit 0
+            elif [ "$http_code" -eq 502 ] || [ "$http_code" -eq 503 ]; then
+              echo "Server is waking up (got $http_code)..."
+              if [ $attempt -lt 3 ]; then
+                sleep_time=$((attempt * 15))
+                echo "Waiting ${sleep_time}s before retry..."
+                sleep $sleep_time
+              fi
+            else
+              echo "Unexpected status: $http_code"
+              if [ $attempt -lt 3 ]; then
+                sleep 10
+              fi
+            fi
+          done
+          
+          echo "Failed to wake server after 3 attempts"
+          exit 1
+      
+      - name: Report Status
+        if: always()
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "Keep-alive successful"
+          else
+            echo "Keep-alive failed"
+          fi

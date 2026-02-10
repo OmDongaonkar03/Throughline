@@ -21,6 +21,9 @@ import { startScheduler, stopScheduler } from './utils/scheduler.js';
 
 const PORT = process.env.PORT || 3000;
 
+// Check if internal cron should be disabled
+const DISABLE_INTERNAL_CRON = process.env.DISABLE_INTERNAL_CRON === 'true';
+
 // Start the server
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
@@ -29,11 +32,19 @@ const server = app.listen(PORT, () => {
   console.log('='.repeat(60));
   
   // Start the job scheduler
-  try {
-    startScheduler();
-  } catch (error) {
-    console.error('Failed to start scheduler:', error);
+  if (DISABLE_INTERNAL_CRON) {
+    console.log('Internal cron scheduler DISABLED');
+    console.log('Using external cron triggers (GitHub Actions)');
+  } else {
+    try {
+      startScheduler();
+      console.log('Internal cron scheduler ENABLED');
+    } catch (error) {
+      console.error('Failed to start scheduler:', error);
+    }
   }
+  
+  console.log('='.repeat(60));
 });
 
 // Graceful shutdown
@@ -41,11 +52,13 @@ const gracefulShutdown = (signal) => {
   console.log(`\n${signal} signal received: closing HTTP server`);
   
   // Stop cron jobs
-  try {
-    stopScheduler();
-    console.log('Cron scheduler stopped');
-  } catch (error) {
-    console.error('Error stopping scheduler:', error);
+  if (!DISABLE_INTERNAL_CRON) {
+    try {
+      stopScheduler();
+      console.log('Cron scheduler stopped');
+    } catch (error) {
+      console.error('Error stopping scheduler:', error);
+    }
   }
   
   // Close server

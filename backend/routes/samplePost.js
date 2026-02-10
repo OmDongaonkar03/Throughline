@@ -4,7 +4,7 @@ import {
   createSamplePost,
   updateSamplePost,
   deleteSamplePost,
-} from "../controllers/samplepost.controller.js";
+} from "../controllers/samplePost.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, schemas } from "../middleware/validation.js";
 

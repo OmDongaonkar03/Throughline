@@ -9,6 +9,6 @@ echo "Generating Prisma client..."
 npm run build
 
 echo "Running database migrations..."
-npx prisma migrate deploy
+npx prisma db push --accept-data-loss
 
 echo "Build completed successfully!"
