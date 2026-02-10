@@ -399,8 +399,8 @@ const Posts = () => {
                     {/* Posts for this date */}
                     <div className="space-y-8">
                       {datePosts.map((post, index) => {
-                        const isLeft = index % 2 === 0;
                         const globalIndex = posts.findIndex(p => p.id === post.id);
+                        const isLeft = globalIndex % 2 === 0;
                         
                         return (
                           <motion.div
