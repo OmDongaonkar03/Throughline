@@ -34,13 +34,6 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1, 'GOOGLE_CLIENT_SECRET is required'),
   GOOGLE_CALLBACK_URL: z.string().url('GOOGLE_CALLBACK_URL must be a valid URL'),
   
-  // Email Configuration
-  MAIL_HOST: z.string().min(1, 'MAIL_HOST is required'),
-  MAIL_PORT: z.string().regex(/^\d+$/, 'MAIL_PORT must be a number'),
-  MAIL_USER: z.string().email('MAIL_USER must be a valid email'),
-  MAIL_PASS: z.string().min(1, 'MAIL_PASS is required'),
-  MAIL_FROM: z.string().min(1, 'MAIL_FROM is required'),
-  
   // Sentry Configuration (optional but recommended)
   SENTRY_DSN: z.string().url('SENTRY_DSN must be a valid URL').optional(),
   

@@ -167,12 +167,17 @@ export const signup = asyncHandler(async (req, res) => {
 
   const finalAccessToken = generateAccessToken(result.id);
 
-  res.cookie("refreshToken", refreshTokenValue, {
+  const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
     maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  };
+  if (process.env.NODE_ENV === "production") {
+    cookieOptions.secure = true;
+    cookieOptions.sameSite = "None";
+  } else {
+    cookieOptions.sameSite = "lax";
+  }
+  res.cookie("refreshToken", refreshTokenValue, cookieOptions);
 
   res.status(201).json({
     message:
@@ -195,7 +200,18 @@ export const login = asyncHandler(async (req, res) => {
     throw new AuthenticationError("Invalid credentials");
   }
 
-  const isValidPassword = await comparePassword(password, user.password);
+  // Check if user signed up with Google OAuth (no password set)
+  if (!user.password && user.googleId) {
+    throw new AuthenticationError(
+      "This account was created using Google sign-in. Please use the 'Continue with Google' button to login.",
+    );
+  }
+
+  if (!user.password) {
+    throw new AuthenticationError("Invalid credentials");
+  }
+
+  const isValidPassword = await comparePassword(user.password, password);
   if (!isValidPassword) {
     throw new AuthenticationError("Invalid credentials");
   }
@@ -235,12 +251,17 @@ export const login = asyncHandler(async (req, res) => {
     },
   });
 
-  res.cookie("refreshToken", refreshToken, {
+  const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
     maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  };
+  if (process.env.NODE_ENV === "production") {
+    cookieOptions.secure = true;
+    cookieOptions.sameSite = "None";
+  } else {
+    cookieOptions.sameSite = "lax";
+  }
+  res.cookie("refreshToken", refreshToken, cookieOptions);
 
   res.json({
     message: "Login successful",
@@ -316,7 +337,7 @@ export const googleCallback = asyncHandler(async (req, res) => {
   const refreshTokenValue = generateRefreshToken();
 
   if (!user) {
-    const existingUserByEmail = await prisma.user.findUnique({ 
+    const existingUserByEmail = await prisma.user.findUnique({
       where: { email },
       select: {
         id: true,
@@ -327,7 +348,7 @@ export const googleCallback = asyncHandler(async (req, res) => {
         hasCompletedOnboarding: true,
         googleId: true,
         createdAt: true,
-      }
+      },
     });
 
     if (existingUserByEmail) {
@@ -413,12 +434,17 @@ export const googleCallback = asyncHandler(async (req, res) => {
   const accessToken = generateAccessToken(user.id);
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
-  res.cookie("refreshToken", refreshTokenValue, {
+  const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
     maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  };
+  if (process.env.NODE_ENV === "production") {
+    cookieOptions.secure = true;
+    cookieOptions.sameSite = "None";
+  } else {
+    cookieOptions.sameSite = "lax";
+  }
+  res.cookie("refreshToken", refreshTokenValue, cookieOptions);
 
   const userData = encodeURIComponent(
     JSON.stringify({
@@ -538,11 +564,16 @@ export const logout = asyncHandler(async (req, res) => {
     });
   }
 
-  res.clearCookie("refreshToken", {
+  const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-  });
+  };
+  if (process.env.NODE_ENV === "production") {
+    cookieOptions.secure = true;
+    cookieOptions.sameSite = "None";
+  } else {
+    cookieOptions.sameSite = "lax";
+  }
+  res.clearCookie("refreshToken", cookieOptions);
 
   res.json({ message: "Logged out successfully" });
 });
@@ -741,7 +772,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
     // Mark token as used atomically - only updates if not already used
     const tokenUpdate = await tx.passwordResetToken.updateMany({
-      where: { 
+      where: {
         tokenHash,
         used: false, // Only update if not already used
       },
@@ -750,14 +781,14 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
     // If no rows were updated, token was already used (race condition)
     if (tokenUpdate.count === 0) {
-      throw new AuthenticationError('Reset token has already been used');
+      throw new AuthenticationError("Reset token has already been used");
     }
 
     // Invalidate all existing sessions
     await tx.refreshToken.deleteMany({
       where: { userId: storedToken.userId },
     });
-    
+
     return tokenUpdate;
   });
 

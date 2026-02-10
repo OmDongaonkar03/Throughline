@@ -22,6 +22,7 @@ import generationRoutes from "./routes/generation.js";
 import feedbackRoutes from "./routes/feedback.js";
 import scheduleRoutes from "./routes/schedule.js";
 import healthRoutes from "./routes/health.js";
+import cronRoutes from './routes/cron.js';
 
 import {
   globalLimiter,
@@ -40,6 +41,8 @@ app.use(
     credentials: true,
   }),
 );
+
+app.set('trust proxy', 1);
 
 app.use(requestId);
 app.use(logger("dev"));
@@ -66,6 +69,7 @@ app.use("/generation", generationRoutes);
 app.use("/feedback", feedbackRoutes);
 app.use("/schedule", scheduleRoutes);
 app.use("/health", healthRoutes);
+app.use('/api/cron', cronRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
