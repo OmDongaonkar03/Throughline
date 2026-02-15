@@ -1,15 +1,22 @@
 import prisma from "../db/prisma.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { ValidationError, NotFoundError } from "../utils/errors.js";
+import { sanitizeText } from "../utils/sanitize.js";
 
 export const submitFeedback = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { postId, rating, issue } = req.body;
+  let { postId, rating, issue } = req.body;
 
   if (![1, 2].includes(rating)) {
     throw new ValidationError(
-      "Rating must be 1 (thumbs down) or 2 (thumbs up)"
+      "Rating must be 1 (thumbs down) or 2 (thumbs up)",
     );
+  }
+
+  // Sanitize issue text if provided (prevents XSS in admin feedback dashboard)
+  if (issue) {
+    issue = sanitizeText(issue);
+    // Empty issue after sanitization is allowed (optional field)
   }
 
   const post = await prisma.generatedPost.findFirst({
