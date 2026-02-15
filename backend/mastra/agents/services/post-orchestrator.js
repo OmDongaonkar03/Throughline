@@ -5,7 +5,8 @@ import {
   NotFoundError,
   AuthorizationError,
   DatabaseError,
-} from "../../utils/errors.js";
+  ValidationError,
+} from "../../../utils/errors.js";
 
 /**
  * Generate complete daily post (base narrative only)

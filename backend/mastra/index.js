@@ -1,8 +1,8 @@
 import { Mastra } from '@mastra/core/mastra';
-import { createToneExtractorAgent } from './agents/tone-extractor.js';
-import { createDailyGeneratorAgent } from './agents/daily-generator.js';
-import { createWeeklyGeneratorAgent } from './agents/weekly-generator.js';
-import { createMonthlyGeneratorAgent } from './agents/monthly-generator.js';
+import { createToneExtractorAgent } from './agents/prompts/tone-extractor-prompt.js';
+import { createDailyGeneratorAgent } from './agents/prompts/daily-prompt.js';
+import { createWeeklyGeneratorAgent } from './agents/prompts/weekly-prompt.js';
+import { createMonthlyGeneratorAgent } from './agents/prompts/monthly-prompt.js';
 
 // Initialize Mastra with all agents
 export const mastra = new Mastra({
@@ -26,23 +26,23 @@ export {
   extractToneProfile,
   getToneProfile,
   updateToneProfile,
-} from './agents/tone-extractor.js';
+} from './agents/services/tone-extractor.js';
 
 // Base post generation functions
 export {
   generateDailyPost,
   getOrGenerateDailyPost,
-} from './agents/daily-generator.js';
+} from './agents/services/daily-generator.js';
 
 export {
   generateWeeklyPost,
   getOrGenerateWeeklyPost,
-} from './agents/weekly-generator.js';
+} from './agents/services/weekly-generator.js';
 
 export {
   generateMonthlyPost,
   getOrGenerateMonthlyPost,
-} from './agents/monthly-generator.js';
+} from './agents/services/monthly-generator.js';
 
 // Orchestration functions
 export {
@@ -58,4 +58,4 @@ export {
   // Limits
   canUserRegenerate,
   getRegenerationCount,
-} from './agents/post-orchestrator.js';
+} from './agents/services/post-orchestrator.js';
