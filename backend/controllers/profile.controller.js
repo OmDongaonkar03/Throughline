@@ -1,6 +1,10 @@
 import prisma from "../db/prisma.js";
 import crypto from "crypto";
-import { generateVerificationToken, verifyVerificationToken } from "../utils/jwt.js";
+import { sanitizeText } from "../utils/sanitize.js";
+import {
+  generateVerificationToken,
+  verifyVerificationToken,
+} from "../utils/jwt.js";
 import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
@@ -15,8 +19,11 @@ const sendVerificationEmail = async (user, newEmail = null) => {
   const emailToVerify = newEmail || user.email;
   const verificationToken = generateVerificationToken(user.id, emailToVerify);
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-  
-  const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+
+  const tokenHash = crypto
+    .createHash("sha256")
+    .update(verificationToken)
+    .digest("hex");
 
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -32,7 +39,7 @@ const sendVerificationEmail = async (user, newEmail = null) => {
 
   if (tokensSentToday >= 3) {
     throw new RateLimitError(
-      "Maximum verification emails sent for today. Please try again tomorrow."
+      "Maximum verification emails sent for today. Please try again tomorrow.",
     );
   }
 
@@ -75,7 +82,30 @@ const sendVerificationEmail = async (user, newEmail = null) => {
 
 export const updateProfileData = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { name, bio, email } = req.body;
+  let { name, bio, email } = req.body;
+
+  // Sanitize inputs to prevent XSS attacks
+  if (name !== undefined) {
+    const originalName = name;
+    name = sanitizeText(name);
+
+    // Validate that name is not empty after sanitization
+    if (originalName.trim() && !name) {
+      throw new ValidationError(
+        "Name cannot contain only HTML or special characters",
+      );
+    }
+  }
+
+  if (bio !== undefined) {
+    // Sanitize bio (can be empty string - user clearing bio)
+    bio = sanitizeText(bio);
+  }
+
+  // Email normalization (already handled by validation middleware, but be defensive)
+  if (email !== undefined) {
+    email = email.toLowerCase().trim();
+  }
 
   const currentUser = await prisma.user.findUnique({
     where: { id: userId },
@@ -135,7 +165,7 @@ export const updateProfileData = asyncHandler(async (req, res) => {
 
     try {
       await sendVerificationEmail(updatedUser);
-      
+
       res.clearCookie("refreshToken", {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -143,7 +173,8 @@ export const updateProfileData = asyncHandler(async (req, res) => {
       });
 
       return res.json({
-        message: "Profile updated. Email changed - please verify your new email address. You have been logged out.",
+        message:
+          "Profile updated. Email changed - please verify your new email address. You have been logged out.",
         user: updatedUser,
         emailChanged: true,
         verificationSent: true,
@@ -152,7 +183,7 @@ export const updateProfileData = asyncHandler(async (req, res) => {
     } catch (emailError) {
       console.error("Failed to send verification email:", emailError);
       throw new Error(
-        "Profile updated but failed to send verification email. Please contact support."
+        "Profile updated but failed to send verification email. Please contact support.",
       );
     }
   }
@@ -195,8 +226,8 @@ export const sendVerificationMail = asyncHandler(async (req, res) => {
   }
 
   await sendVerificationEmail(user);
-  
-  res.json({ 
+
+  res.json({
     message: "Verification email sent successfully",
     verificationSent: true,
   });
@@ -210,12 +241,12 @@ export const verifyUser = asyncHandler(async (req, res) => {
   }
 
   const decoded = verifyVerificationToken(token);
-  
+
   if (!decoded || decoded.type !== "verification") {
     throw new ValidationError("Invalid verification token");
   }
 
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
   const storedToken = await prisma.verificationToken.findUnique({
     where: { tokenHash },
@@ -261,7 +292,7 @@ export const verifyUser = asyncHandler(async (req, res) => {
     return user;
   });
 
-  res.json({ 
+  res.json({
     message: "Email verified successfully",
     user: updatedUser,
     verified: true,

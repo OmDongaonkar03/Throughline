@@ -1,5 +1,6 @@
 import prisma from "../db/prisma.js";
 import crypto from "crypto";
+import { sanitizeText } from "../utils/sanitize.js";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -79,10 +80,21 @@ const sendVerificationEmail = async (user) => {
 };
 
 export const signup = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
+  let { name, email, password } = req.body;
 
   if (!name || !email || !password) {
     throw new ValidationError("All fields are required");
+  }
+
+  // Sanitize name to prevent XSS attacks
+  const originalName = name;
+  name = sanitizeText(name);
+
+  // Validate name is not empty after sanitization
+  if (originalName.trim() && (!name || name.length === 0)) {
+    throw new ValidationError(
+      "Name cannot contain only HTML or special characters",
+    );
   }
 
   if (!validatePassword(password)) {
@@ -330,7 +342,10 @@ export const googleCallback = asyncHandler(async (req, res) => {
     );
   }
 
-  const { id: googleId, email, name, picture } = userInfo;
+  const { id: googleId, email, name: googleName, picture } = userInfo;
+
+  // Sanitize name from Google (defense in depth)
+  const name = sanitizeText(googleName || email.split("@")[0]);
 
   let user = await prisma.user.findUnique({ where: { googleId } });
 

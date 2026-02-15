@@ -1,12 +1,12 @@
 import prisma from "../db/prisma.js";
-import DOMPurify from "dompurify";
-import { JSDOM } from "jsdom";
+import { sanitizeText } from "../utils/sanitize.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
-import { ValidationError, RateLimitError, NotFoundError } from "../utils/errors.js";
+import {
+  ValidationError,
+  RateLimitError,
+  NotFoundError,
+} from "../utils/errors.js";
 import { validateAndParseDate } from "../lib/time.js";
-
-const window = new JSDOM("").window;
-const purify = DOMPurify(window);
 
 export const createCheckIn = asyncHandler(async (req, res) => {
   const { content } = req.body;
@@ -46,13 +46,10 @@ export const createCheckIn = asyncHandler(async (req, res) => {
   }
 
   // Sanitize content - remove all HTML tags and dangerous content
-  const sanitizedContent = purify.sanitize(content.trim(), {
-    ALLOWED_TAGS: [],
-    ALLOWED_ATTR: [],
-  });
+  const sanitizedContent = sanitizeText(content);
 
   // Additional validation after sanitization
-  if (sanitizedContent.length === 0) {
+  if (!sanitizedContent || sanitizedContent.length === 0) {
     throw new ValidationError("Content cannot be empty after sanitization");
   }
 
@@ -141,7 +138,7 @@ export const getCheckInStats = asyncHandler(async (req, res) => {
 
   if (targetYear < accountCreationYear || targetYear > currentYear) {
     throw new ValidationError(
-      "Invalid year. Must be between account creation year and current year"
+      "Invalid year. Must be between account creation year and current year",
     );
   }
 
@@ -177,10 +174,10 @@ export const getCheckInStats = asyncHandler(async (req, res) => {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   let currentStreak = 0;
   let checkDate = new Date(today);
-  
+
   while (true) {
     const dateKey = checkDate.toISOString().split("T")[0];
     if (dailyCounts[dateKey]) {
@@ -196,7 +193,7 @@ export const getCheckInStats = asyncHandler(async (req, res) => {
     accountCreationDate: accountCreationDate.toISOString().split("T")[0],
     availableYears: Array.from(
       { length: currentYear - accountCreationYear + 1 },
-      (_, i) => accountCreationYear + i
+      (_, i) => accountCreationYear + i,
     ),
     dailyCounts,
     totalCheckIns: checkIns.length,

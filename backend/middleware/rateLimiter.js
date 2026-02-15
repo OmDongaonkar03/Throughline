@@ -30,6 +30,9 @@ export const globalLimiter = rateLimit({
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true, // Return rate limit info in RateLimit-* headers
   legacyHeaders: false, // Disable X-RateLimit-* headers
+  keyGenerator: (req) => {
+    return req.ip; // Rate limit per IP
+  },
   handler: createRateLimitHandler(
     "Too many requests from this IP, please try again later.",
   ),
