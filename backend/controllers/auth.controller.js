@@ -211,6 +211,14 @@ export const login = asyncHandler(async (req, res) => {
     throw new AuthenticationError("Invalid credentials");
   }
 
+  // Brute force protection: Check if account is locked
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    const minutesLeft = Math.ceil((user.lockedUntil - new Date()) / 60000);
+    throw new AuthenticationError(
+      `Account temporarily locked due to too many failed login attempts. Try again in ${minutesLeft} minute${minutesLeft !== 1 ? 's' : ''}.`
+    );
+  }
+
   // Check if user signed up with Google OAuth (no password set)
   if (!user.password && user.googleId) {
     throw new AuthenticationError(
@@ -223,8 +231,40 @@ export const login = asyncHandler(async (req, res) => {
   }
 
   const isValidPassword = await comparePassword(user.password, password);
+  
   if (!isValidPassword) {
+    // Brute force protection: Increment failed attempts
+    const newAttempts = user.loginAttempts + 1;
+    const shouldLock = newAttempts >= 5;
+    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        loginAttempts: newAttempts,
+        lockedUntil: shouldLock 
+          ? new Date(Date.now() + 15 * 60 * 1000) // Lock for 15 minutes
+          : user.lockedUntil, // Keep existing lock time if already locked
+      }
+    });
+
+    if (shouldLock) {
+      throw new AuthenticationError(
+        "Too many failed login attempts. Account locked for 15 minutes."
+      );
+    }
+    
     throw new AuthenticationError("Invalid credentials");
+  }
+
+  // Brute force protection: Reset attempts on successful login
+  if (user.loginAttempts > 0 || user.lockedUntil) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { 
+        loginAttempts: 0, 
+        lockedUntil: null 
+      }
+    });
   }
 
   if (!user.verified) {
