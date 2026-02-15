@@ -31,6 +31,7 @@ import {
 } from "./middleware/rateLimiter.js";
 import { requestId } from "./middleware/requestId.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
+import { securityHeaders } from './middleware/security.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,13 +43,20 @@ app.use(
   }),
 );
 
-app.set('trust proxy', 1);
-
+app.use(securityHeaders);
 app.use(requestId);
 app.use(logger("dev"));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
+
+app.use(express.json({ 
+  limit: '20kb',
+  strict: true
+}));
+
+app.use(express.urlencoded({ 
+  extended: false,
+  limit: '20kb'
+}));
 
 app.use(globalLimiter);
 

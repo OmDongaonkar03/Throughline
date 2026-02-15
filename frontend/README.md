@@ -8,21 +8,3 @@ This app is the surface of that experience.
 
 The frontend is designed to feel calm, human, and non-performative.
 Users shouldn’t feel pressure to “write well” — only to log honestly.
-
----
-
-## Tech Stack
-
-- React (Vite)
-- TypeScript
-- Tailwind CSS
-- Framer Motion
-- React Router
-
----
-
-## Running Locally
-
-```bash
-npm install
-npm run dev

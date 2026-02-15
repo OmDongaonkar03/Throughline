@@ -28,23 +28,3 @@ The core idea is simple:
 > Narratives are generated.
 
 Everything in this backend exists to support that loop.
-
----
-
-## Tech Stack
-
-- Node.js (Express, ESM)
-- Prisma + MySQL
-- Mastra / LLM orchestration layer
-- Email (verification + password reset)
-- OAuth (Google)
-- Razorpay (billing)
-- Sentry (error tracking)
-
----
-
-## Running Locally
-
-```bash
-npm install
-npm start
