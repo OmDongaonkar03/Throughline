@@ -50,7 +50,6 @@ model RefreshToken {
 
 model VerificationToken {
   id        String   @id @default(cuid())
-  token     String   @db.Text
   tokenHash String   @unique
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -66,7 +65,6 @@ model VerificationToken {
 
 model PasswordResetToken {
   id        String   @id @default(cuid())
-  token     String   @db.Text
   tokenHash String   @unique
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
