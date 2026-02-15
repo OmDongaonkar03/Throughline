@@ -18,6 +18,11 @@ model User {
   profilePhoto         String?
   verified             Boolean               @default(false)
   hasCompletedOnboarding Boolean             @default(false)
+  
+  // Brute force protection
+  loginAttempts        Int                   @default(0)
+  lockedUntil          DateTime?
+  
   refreshTokens        RefreshToken[]
   notificationSettings NotificationSettings?
   verificationTokens   VerificationToken[]
