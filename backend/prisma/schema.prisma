@@ -14,6 +14,7 @@ model User {
   name                 String
   bio                  String?
   password             String?
+  passwordHistory      Json?                 // Stores last 5 password hashes
   googleId             String?               @unique
   profilePhoto         String?
   verified             Boolean               @default(false)
