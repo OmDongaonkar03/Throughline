@@ -810,15 +810,34 @@ export const resetPassword = asyncHandler(async (req, res) => {
     );
   }
 
+  // Check password history - prevent reusing last 5 passwords
+  const passwordHistory = storedToken.user.passwordHistory || [];
+  if (Array.isArray(passwordHistory) && passwordHistory.length > 0) {
+    for (const oldHash of passwordHistory) {
+      const isReusedPassword = await comparePassword(newPassword, oldHash);
+      if (isReusedPassword) {
+        throw new ValidationError(
+          "Cannot reuse any of your last 5 passwords. Please choose a different password."
+        );
+      }
+    }
+  }
+
   const hashedPassword = await hashPassword(newPassword);
 
   // Use transaction with atomic update to prevent token reuse
   const result = await prisma.$transaction(async (tx) => {
-    // Update user password
+    // Prepare password history (keep last 5, including current)
+    const currentPasswordHash = storedToken.user.password;
+    const historyArray = Array.isArray(passwordHistory) ? passwordHistory : [];
+    const newHistory = [currentPasswordHash, ...historyArray].slice(0, 5);
+
+    // Update user password with history
     await tx.user.update({
       where: { id: storedToken.userId },
       data: {
         password: hashedPassword,
+        passwordHistory: newHistory,
         updatedAt: new Date(),
       },
     });
