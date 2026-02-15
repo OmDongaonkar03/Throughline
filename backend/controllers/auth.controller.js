@@ -54,7 +54,6 @@ const sendVerificationEmail = async (user) => {
 
   await prisma.verificationToken.create({
     data: {
-      token: verificationToken,
       tokenHash: tokenHash,
       userId: user.id,
       email: user.email,
@@ -636,7 +635,6 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 
   await prisma.passwordResetToken.create({
     data: {
-      token: resetToken,
       tokenHash: tokenHash,
       userId: user.id,
       email: user.email,
