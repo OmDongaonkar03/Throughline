@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import logger from './logger.js';
 
 // Initialize Resend with API key
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -15,6 +16,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
  */
 export async function sendMail({ to, subject, html, text }, maxRetries = 3) {
   if (!process.env.RESEND_API_KEY) {
+    logger.error('Email sending failed: RESEND_API_KEY not set');
     throw new Error("RESEND_API_KEY is not set");
   }
 
@@ -39,7 +41,17 @@ export async function sendMail({ to, subject, html, text }, maxRetries = 3) {
 
       // Success - log and return
       if (attempt > 1) {
-        console.log(`[Email] Successfully sent after ${attempt} attempts to ${to}`);
+        logger.info('Email sent successfully after retries', {
+          to,
+          subject,
+          attempt,
+          maxRetries
+        });
+      } else {
+        logger.info('Email sent successfully', {
+          to,
+          subject
+        });
       }
 
       return data;
@@ -47,16 +59,33 @@ export async function sendMail({ to, subject, html, text }, maxRetries = 3) {
       lastError = error;
       
       // Log the attempt
-      console.error(`[Email] Attempt ${attempt}/${maxRetries} failed for ${to}:`, error.message);
+      logger.warn('Email sending attempt failed', {
+        attempt,
+        maxRetries,
+        to,
+        subject,
+        error: error.message
+      });
 
       if (attempt === maxRetries) {
-        console.error(`[Email] All ${maxRetries} attempts failed for ${to}`);
+        logger.error('Email sending failed after all retries', {
+          maxRetries,
+          to,
+          subject,
+          error: error.message,
+          stack: error.stack
+        });
         throw new Error(`Failed to send email after ${maxRetries} attempts: ${error.message}`);
       }
 
       // Exponential backoff: wait 1s, 2s, 4s, etc.
       const backoffTime = Math.pow(2, attempt - 1) * 1000;
-      console.log(`[Email] Retrying in ${backoffTime}ms...`);
+      logger.debug('Email retry scheduled', {
+        attempt,
+        backoffMs: backoffTime,
+        to,
+        subject
+      });
       await new Promise(resolve => setTimeout(resolve, backoffTime));
     }
   }

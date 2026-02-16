@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import logger from './logger.js';
 import { checkSchedules } from "../jobs/check-schedules.js";
 import { processGenerationJobs, cleanupOldJobs } from "../jobs/process-jobs.js";
 
@@ -9,18 +10,23 @@ import { processGenerationJobs, cleanupOldJobs } from "../jobs/process-jobs.js";
 export function startScheduler() {
   // Skip if disabled (for advanced users using external cron)
   if (process.env.DISABLE_INTERNAL_CRON === "true") {
-    console.log(
-      "[Scheduler] Internal scheduler disabled via DISABLE_INTERNAL_CRON"
-    );
+    logger.info('Internal scheduler disabled', {
+      reason: 'DISABLE_INTERNAL_CRON=true',
+      mode: 'external_cron'
+    });
     return;
   }
 
-  console.log("[Scheduler] Starting job scheduler...");
+  logger.info('Job scheduler starting');
 
   // Run every 15 minutes
   // Checks which users need posts generated and processes pending jobs
   cron.schedule("*/15 * * * *", async () => {
-    console.log(`[Scheduler] Time: ${new Date().toISOString()}`);
+    const startTime = Date.now();
+    logger.info('Scheduled task execution started', {
+      timestamp: new Date().toISOString(),
+      schedule: 'every_15_minutes'
+    });
 
     try {
       // Step 1: Check schedules and create jobs
@@ -28,26 +34,54 @@ export function startScheduler() {
 
       // Step 2: Process pending jobs
       await processGenerationJobs();
-    } catch (error) {
-      console.error("[Scheduler] Error in scheduled task:", error);
-    }
 
-    console.log("[Scheduler] === Scheduled tasks complete ===\n");
+      const duration = Date.now() - startTime;
+      logger.info('Scheduled task execution completed', {
+        durationMs: duration,
+        durationSeconds: Math.round(duration / 1000)
+      });
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Scheduled task execution failed', {
+        error: error.message,
+        stack: error.stack,
+        durationMs: duration
+      });
+    }
   });
 
   // Clean up old completed jobs daily at 3 AM
   cron.schedule("0 3 * * *", async () => {
-    console.log("[Scheduler] Running daily cleanup...");
+    logger.info('Daily cleanup task started', {
+      timestamp: new Date().toISOString(),
+      schedule: '3_AM_daily'
+    });
+
+    const startTime = Date.now();
     try {
-      await cleanupOldJobs(7); // Keep last 7 days
+      const deletedCount = await cleanupOldJobs(7); // Keep last 7 days
+      const duration = Date.now() - startTime;
+      
+      logger.info('Daily cleanup task completed', {
+        deletedJobs: deletedCount,
+        daysKept: 7,
+        durationMs: duration
+      });
     } catch (error) {
-      console.error("[Scheduler] Error in cleanup:", error);
+      const duration = Date.now() - startTime;
+      logger.error('Daily cleanup task failed', {
+        error: error.message,
+        stack: error.stack,
+        durationMs: duration
+      });
     }
   });
 
-  console.log("[Scheduler] Scheduler started");
-  console.log("[Scheduler] - Main task: Every 15 minutes");
-  console.log("[Scheduler] - Cleanup: Daily at 3 AM");
+  logger.info('Job scheduler started successfully', {
+    mainTask: 'every_15_minutes',
+    cleanupTask: 'daily_3am',
+    cronEnabled: true
+  });
 }
 
 /**
@@ -55,6 +89,12 @@ export function startScheduler() {
  * Useful for testing or graceful shutdown
  */
 export function stopScheduler() {
-  cron.getTasks().forEach((task) => task.stop());
-  console.log("[Scheduler] Scheduler stopped");
+  const tasks = cron.getTasks();
+  const taskCount = tasks.size;
+  
+  tasks.forEach((task) => task.stop());
+  
+  logger.info('Job scheduler stopped', {
+    stoppedTasks: taskCount
+  });
 }

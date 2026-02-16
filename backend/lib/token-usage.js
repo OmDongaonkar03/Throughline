@@ -1,3 +1,5 @@
+import logger from '../utils/logger.js';
+
 /**
  * Normalize token usage from different LLM providers
  * 
@@ -11,7 +13,7 @@
  */
 function normalizeUsage(usage) {
   if (!usage) {
-    console.warn('No usage data provided, using defaults');
+    logger.warn('Token usage normalization: No usage data provided, using defaults');
     return {
       promptTokens: 0,
       completionTokens: 0,
@@ -44,6 +46,12 @@ function normalizeUsage(usage) {
     const estimatedPrompt = Math.round(total * 0.6);
     const estimatedCompletion = total - estimatedPrompt;
     
+    logger.debug('Token usage normalization: Estimated split for Gemini format', {
+      total,
+      estimatedPrompt,
+      estimatedCompletion
+    });
+    
     return {
       promptTokens: estimatedPrompt,
       completionTokens: estimatedCompletion,
@@ -52,7 +60,9 @@ function normalizeUsage(usage) {
   }
 
   // Fallback: try to extract any token counts
-  console.warn('Unknown usage format, attempting to extract data:', usage);
+  logger.warn('Token usage normalization: Unknown format, attempting extraction', {
+    usageKeys: Object.keys(usage)
+  });
   
   const total = usage.total || usage.totalTokens || 0;
   const prompt = usage.prompt || usage.promptTokens || usage.input || usage.input_tokens || 0;
@@ -67,7 +77,10 @@ function normalizeUsage(usage) {
   }
 
   // Last resort: return zeros
-  console.warn('Could not extract token usage, using zeros');
+  logger.warn('Token usage normalization: Could not extract data, using zeros', {
+    providedUsage: usage
+  });
+  
   return {
     promptTokens: 0,
     completionTokens: 0,
@@ -114,15 +127,21 @@ export async function saveGeneratedPostTokenUsage(prisma, params) {
       },
     });
 
-    console.log(`✅ Token usage saved for ${agentType}:`, {
+    logger.info('Token usage saved for generated post', {
+      agentType,
       postId: generatedPostId,
-      total: normalizedUsage.totalTokens,
+      totalTokens: normalizedUsage.totalTokens,
+      modelUsed,
+      estimatedCost
     });
   } catch (error) {
     // Log error but don't throw - user experience should not be disrupted
-    console.error(`⚠️ Failed to save token usage for ${agentType}:`, {
+    logger.error('Failed to save token usage for generated post', {
       error: error.message,
+      stack: error.stack,
+      agentType,
       postId: generatedPostId,
+      modelUsed
     });
   }
 }
@@ -167,15 +186,21 @@ export async function savePlatformPostTokenUsage(prisma, params) {
       },
     });
 
-    console.log(`✅ Token usage saved for platform-adapter (${platform}):`, {
+    logger.info('Token usage saved for platform post', {
+      platform,
       platformPostId,
-      total: normalizedUsage.totalTokens,
+      totalTokens: normalizedUsage.totalTokens,
+      modelUsed,
+      estimatedCost
     });
   } catch (error) {
     // Log error but don't throw - user experience should not be disrupted
-    console.error(`⚠️ Failed to save token usage for platform ${platform}:`, {
+    logger.error('Failed to save token usage for platform post', {
       error: error.message,
+      stack: error.stack,
+      platform,
       platformPostId,
+      modelUsed
     });
   }
 }
@@ -210,18 +235,30 @@ export function calculateEstimatedCost(usage, modelUsed) {
     "google/gemini-1.5-flash": { input: 0.075, output: 0.30 },
     "google/gemini-1.5-pro": { input: 1.25, output: 5.00 },
     "google/gemini-pro": { input: 0.50, output: 1.50 },
+    "google/gemini-2.0-flash": { input: 0.10, output: 0.40 },
   };
 
   const model = pricing[modelUsed];
   if (!model) {
-    console.warn(`Unknown model pricing: ${modelUsed}, cost estimation skipped`);
+    logger.debug('Unknown model for cost estimation', {
+      modelUsed,
+      availableModels: Object.keys(pricing)
+    });
     return null;
   }
 
   const inputCost = (normalizedUsage.promptTokens / 1_000_000) * model.input;
   const outputCost = (normalizedUsage.completionTokens / 1_000_000) * model.output;
+  const totalCost = inputCost + outputCost;
 
-  return inputCost + outputCost;
+  logger.debug('Cost estimation calculated', {
+    modelUsed,
+    promptTokens: normalizedUsage.promptTokens,
+    completionTokens: normalizedUsage.completionTokens,
+    estimatedCost: totalCost
+  });
+
+  return totalCost;
 }
 
 /**
@@ -264,6 +301,13 @@ export async function getGeneratedPostTotalUsage(prisma, generatedPostId) {
       }
     );
 
+    logger.debug('Retrieved total token usage for post', {
+      generatedPostId,
+      totalTokens: totals.totalTokens,
+      estimatedCost: totals.estimatedCost,
+      recordCount: allUsage.length
+    });
+
     return {
       ...totals,
       breakdown: {
@@ -272,7 +316,11 @@ export async function getGeneratedPostTotalUsage(prisma, generatedPostId) {
       },
     };
   } catch (error) {
-    console.error("Failed to get token usage:", error);
+    logger.error('Failed to get generated post token usage', {
+      error: error.message,
+      stack: error.stack,
+      generatedPostId
+    });
     return null;
   }
 }
@@ -347,13 +395,29 @@ export async function getUserTokenUsage(prisma, userId, startDate, endDate) {
       estimatedCost: usage.reduce((sum, u) => sum + (u.estimatedCost || 0), 0),
     };
 
+    logger.info('Retrieved user token usage', {
+      userId,
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0],
+      totalTokens: totals.totalTokens,
+      estimatedCost: totals.estimatedCost,
+      recordCount: usage.length,
+      agentTypes: Object.keys(byAgentType)
+    });
+
     return {
       totals,
       byAgentType,
       dateRange: { startDate, endDate },
     };
   } catch (error) {
-    console.error("Failed to get user token usage:", error);
+    logger.error('Failed to get user token usage', {
+      error: error.message,
+      stack: error.stack,
+      userId,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString()
+    });
     return null;
   }
 }

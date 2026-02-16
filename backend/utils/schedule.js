@@ -1,4 +1,5 @@
 import prisma from "../db/prisma.js";
+import logger from './logger.js';
 
 /**
  * Create default generation schedule for new user
@@ -21,13 +22,21 @@ export async function createDefaultSchedule(userId) {
       },
     });
 
-    console.log(`[Schedule] Created default schedule for user ${userId}`);
+    logger.info('Default schedule created for user', {
+      userId,
+      dailyTime: schedule.dailyTime,
+      weeklyDay: schedule.weeklyDay,
+      monthlyDay: schedule.monthlyDay,
+      timezone: schedule.timezone
+    });
+
     return schedule;
   } catch (error) {
-    console.error(
-      `[Schedule] Failed to create default schedule for user ${userId}:`,
-      error
-    );
+    logger.error('Failed to create default schedule', {
+      userId,
+      error: error.message,
+      stack: error.stack
+    });
     return null;
   }
 }
@@ -44,13 +53,17 @@ export async function createDefaultNotificationSettings(userId) {
       },  
     });
 
-    console.log(
-      `[NotificationSettings] Created default notification settings for user ${userId}`
-    );
+    logger.info('Default notification settings created for user', {
+      userId,
+      emailDigest: false,
+      postReminders: true,
+      weeklyReport: false
+    });
   } catch (error) {
-    console.error(
-      `[NotificationSettings] Failed to create default notification settings for user ${userId}:`,
-      error
-    );
+    logger.error('Failed to create default notification settings', {
+      userId,
+      error: error.message,
+      stack: error.stack
+    });
   }
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import logger from './logger.js';
 
 /**
  * Environment variable validation schema
@@ -86,15 +87,29 @@ export function validateEnv() {
         validated.ANTHROPIC_API_KEY;
       
       if (!hasLLMProvider) {
-        console.warn(
-          '\n WARNING: No LLM provider configured in self-hosted mode!\n' +
-          'Set at least one of: GROQ_API_KEY, OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY\n' +
-          'The application will start but AI features will not work.\n'
-        );
+        logger.warn('No LLM provider configured in self-hosted mode', {
+          mode: 'self-hosted',
+          aiFeatures: 'disabled',
+          availableProviders: ['GROQ', 'OPENROUTER', 'GOOGLE', 'OPENAI', 'ANTHROPIC'],
+          message: 'Application will start but AI features will not work'
+        });
+      } else {
+        logger.info('LLM providers validated for self-hosted mode', {
+          mode: 'self-hosted',
+          hasGroq: !!validated.GROQ_API_KEY,
+          hasOpenRouter: !!validated.OPENROUTER_API_KEY,
+          hasGoogle: !!validated.GOOGLE_GENERATIVE_AI_API_KEY,
+          hasOpenAI: !!validated.OPENAI_API_KEY,
+          hasAnthropic: !!validated.ANTHROPIC_API_KEY
+        });
       }
     } else if (mode === 'saas') {
       // SaaS mode: Provider must be specified and API key must exist
       if (!validated.SAAS_LLM_PROVIDER) {
+        logger.error('SaaS mode missing LLM provider configuration', {
+          mode: 'saas',
+          missingConfig: 'SAAS_LLM_PROVIDER'
+        });
         throw new Error('SAAS_LLM_PROVIDER must be set when MODE=saas');
       }
       
@@ -109,22 +124,38 @@ export function validateEnv() {
       
       const requiredKey = providerKeyMap[provider];
       if (!validated[requiredKey]) {
+        logger.error('SaaS mode missing API key for selected provider', {
+          mode: 'saas',
+          provider,
+          missingKey: requiredKey
+        });
         throw new Error(`${requiredKey} must be set when SAAS_LLM_PROVIDER=${provider}`);
       }
+
+      logger.info('LLM provider validated for SaaS mode', {
+        mode: 'saas',
+        provider,
+        keyConfigured: requiredKey
+      });
     }
     
+    logger.info('Environment validation successful');
     return validated;
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.error('\n Environment Validation Failed:\n');
-      error.errors.forEach((err) => {
-        const path = err.path.join('.');
-        console.error(`  • ${path}: ${err.message}`);
+      logger.error('Environment validation failed: Zod schema errors', {
+        errorCount: error.errors.length,
+        errors: error.errors.map(err => ({
+          path: err.path.join('.'),
+          message: err.message
+        })),
+        hint: 'Please check your .env file and ensure all required variables are set'
       });
-      console.error('\n Please check your .env file and ensure all required variables are set.\n');
     } else {
-      console.error('\n Environment Validation Error:\n');
-      console.error(`  ${error.message}\n`);
+      logger.error('Environment validation failed', {
+        error: error.message,
+        stack: error.stack
+      });
     }
     
     throw new Error('Environment validation failed. Cannot start application.');
@@ -135,14 +166,6 @@ export function validateEnv() {
  * Log environment configuration (safe version without secrets)
  */
 export function logEnvConfig(env) {
-  console.log('\n Environment Configuration:');
-  console.log(`  • Mode: ${env.MODE}`);
-  console.log(`  • Node Environment: ${env.NODE_ENV}`);
-  console.log(`  • Port: ${env.PORT}`);
-  console.log(`  • Database: ${env.DATABASE_URL.split('@')[1] || 'configured'}`);
-  console.log(`  • Frontend URL: ${env.FRONTEND_URL}`);
-  console.log(`  • Timezone: ${env.TZ}`);
-  
   // Show configured LLM providers
   const llmProviders = [];
   if (env.GROQ_API_KEY) llmProviders.push('Groq');
@@ -150,10 +173,19 @@ export function logEnvConfig(env) {
   if (env.GOOGLE_GENERATIVE_AI_API_KEY) llmProviders.push('Google Gemini');
   if (env.OPENAI_API_KEY) llmProviders.push('OpenAI');
   if (env.ANTHROPIC_API_KEY) llmProviders.push('Anthropic');
-  
-  if (llmProviders.length > 0) {
-    console.log(`  • LLM Providers: ${llmProviders.join(', ')}`);
-  }
-  
-  console.log('');
+
+  const dbHost = env.DATABASE_URL.split('@')[1] || 'configured';
+
+  logger.info('Environment configuration loaded', {
+    mode: env.MODE,
+    nodeEnv: env.NODE_ENV,
+    port: env.PORT,
+    timezone: env.TZ,
+    databaseHost: dbHost,
+    frontendUrl: env.FRONTEND_URL,
+    llmProviders: llmProviders.length > 0 ? llmProviders : ['none'],
+    cronEnabled: env.DISABLE_INTERNAL_CRON !== 'true',
+    sentryEnabled: !!env.SENTRY_DSN,
+    rateLimitSkipped: env.SKIP_RATE_LIMIT === 'true'
+  });
 }
