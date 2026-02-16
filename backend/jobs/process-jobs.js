@@ -1,4 +1,5 @@
 import prisma from "../db/prisma.js";
+import logger from '../utils/logger.js';
 import {
   generateCompleteDailyPosts,
   generateCompleteWeeklyPosts,
@@ -6,7 +7,7 @@ import {
 } from "../mastra/index.js";
 
 export async function processGenerationJobs() {
-  console.log("[Process Jobs] Checking for pending jobs...");
+  logger.info('Job processor started');
 
   await cleanupStalledJobs();
 
@@ -47,15 +48,22 @@ export async function processGenerationJobs() {
   });
 
   if (jobs.length === 0) {
-    console.log("[Process Jobs] No pending jobs found");
+    logger.debug('No pending jobs found');
     return;
   }
 
-  console.log(`[Process Jobs] Processing ${jobs.length} jobs`);
+  logger.info('Processing generation jobs', {
+    jobCount: jobs.length
+  });
 
   for (const job of jobs) {
     try {
-      console.log(`[Process Jobs] Processing job ${job.id} for user ${job.userId} (type: ${job.type})`);
+      logger.info('Processing job', {
+        jobId: job.id,
+        userId: job.userId,
+        type: job.type,
+        date: job.date.toISOString().split('T')[0]
+      });
 
       let result;
       
@@ -91,12 +99,23 @@ export async function processGenerationJobs() {
           throw new Error(`Unsupported post type: ${job.type}`);
       }
 
-      console.log(`[Process Jobs] Generated ${job.type} post: ${result.basePost.id}`);
-      console.log(`[Process Jobs] Platform posts: ${result.generated} succeeded, ${result.failed} failed`);
+      logger.info('Post generation completed', {
+        jobId: job.id,
+        userId: job.userId,
+        type: job.type,
+        postId: result.basePost.id,
+        platformsSucceeded: result.generated,
+        platformsFailed: result.failed
+      });
 
       if (result.errors && result.errors.length > 0) {
         result.errors.forEach(error => {
-          console.error(`[Process Jobs] Platform ${error.platform} failed: ${error.error}`);
+          logger.warn('Platform generation failed', {
+            jobId: job.id,
+            userId: job.userId,
+            platform: error.platform,
+            error: error.error
+          });
         });
       }
 
@@ -108,9 +127,19 @@ export async function processGenerationJobs() {
         },
       });
 
-      console.log(`[Process Jobs] Job ${job.id} completed successfully`);
+      logger.info('Job completed successfully', {
+        jobId: job.id,
+        userId: job.userId,
+        type: job.type
+      });
     } catch (error) {
-      console.error(`[Process Jobs] Job ${job.id} failed:`, error);
+      logger.error('Job processing failed', {
+        jobId: job.id,
+        userId: job.userId,
+        type: job.type,
+        error: error.message,
+        stack: error.stack
+      });
 
       await prisma.generationJob.update({
         where: { id: job.id },
@@ -123,7 +152,9 @@ export async function processGenerationJobs() {
     }
   }
 
-  console.log(`[Process Jobs] Processed ${jobs.length} jobs`);
+  logger.info('Job processor completed', {
+    processedCount: jobs.length
+  });
 }
 
 export async function cleanupOldJobs(daysToKeep = 7) {
@@ -141,7 +172,12 @@ export async function cleanupOldJobs(daysToKeep = 7) {
     },
   });
 
-  console.log(`[Cleanup] Deleted ${deleted.count} old jobs`);
+  logger.info('Old jobs cleaned up', {
+    deletedCount: deleted.count,
+    daysKept: daysToKeep,
+    cutoffDate: cutoffDate.toISOString().split('T')[0]
+  });
+
   return deleted.count;
 }
 
@@ -159,7 +195,10 @@ export async function cleanupStalledJobs() {
   });
 
   if (stalledJobs.length > 0) {
-    console.log(`[Cleanup] Found ${stalledJobs.length} stalled jobs`);
+    logger.warn('Stalled jobs detected', {
+      stalledCount: stalledJobs.length,
+      timeoutMinutes: 30
+    });
 
     for (const job of stalledJobs) {
       await prisma.generationJob.update({
@@ -170,9 +209,19 @@ export async function cleanupStalledJobs() {
           completedAt: new Date(),
         },
       });
+
+      logger.warn('Stalled job reset', {
+        jobId: job.id,
+        userId: job.userId,
+        type: job.type,
+        startedAt: job.startedAt.toISOString(),
+        stalledDuration: Math.round((new Date() - job.startedAt) / 60000) + ' minutes'
+      });
     }
 
-    console.log(`[Cleanup] Reset ${stalledJobs.length} stalled jobs to FAILED`);
+    logger.info('Stalled jobs cleanup completed', {
+      resetCount: stalledJobs.length
+    });
   }
 
   return stalledJobs.length;

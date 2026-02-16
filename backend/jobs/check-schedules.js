@@ -1,4 +1,5 @@
 import prisma from '../db/prisma.js';
+import logger from '../utils/logger.js';
 import { 
   getUserHour, 
   getUserMinute, 
@@ -13,14 +14,19 @@ import {
  * Runs periodically to check which users need posts generated
  */
 export async function checkSchedules() {
-  console.log('[Schedule Checker] Checking schedules...');
+  logger.info('Schedule checker started');
   
   const currentHour = getUserHour();
   const currentMinute = getUserMinute();
   const currentDay = new Date().getDay(); // 0 = Sunday, 6 = Saturday
   const currentDate = new Date().getDate(); // 1-31
   
-  console.log(`[Schedule Checker] Current time: ${currentHour}:${currentMinute}, Day: ${currentDay}, Date: ${currentDate}`);
+  logger.debug('Schedule checker time context', {
+    hour: currentHour,
+    minute: currentMinute,
+    dayOfWeek: currentDay,
+    dayOfMonth: currentDate
+  });
   
   try {
     // Check all schedule types
@@ -28,9 +34,13 @@ export async function checkSchedules() {
     await checkWeeklySchedules(currentHour, currentMinute, currentDay);
     await checkMonthlySchedules(currentHour, currentMinute, currentDate);
     
-    console.log('[Schedule Checker] Finished checking schedules');
+    logger.info('Schedule checker completed successfully');
   } catch (error) {
-    console.error('[Schedule Checker] Error checking schedules:', error);
+    logger.error('Schedule checker failed', {
+      error: error.message,
+      stack: error.stack
+    });
+    throw error; // Re-throw to let caller handle
   }
 }
 
@@ -53,7 +63,9 @@ async function checkDailySchedules(currentHour, currentMinute) {
     },
   });
   
-  console.log(`[Schedule Checker] Found ${schedules.length} users with daily generation enabled`);
+  logger.debug('Daily schedules check', {
+    totalEnabled: schedules.length
+  });
   
   // Filter schedules that match current time window
   const matchingSchedules = schedules.filter(schedule => 
@@ -61,11 +73,13 @@ async function checkDailySchedules(currentHour, currentMinute) {
   );
   
   if (matchingSchedules.length === 0) {
-    console.log('[Schedule Checker] No daily schedules match current time');
+    logger.debug('No daily schedules match current time');
     return;
   }
   
-  console.log(`[Schedule Checker] ${matchingSchedules.length} schedules match current time`);
+  logger.info('Daily schedules matched', {
+    matchingCount: matchingSchedules.length
+  });
   
   const userIds = matchingSchedules.map(s => s.userId);
   const today = getToday();
@@ -115,17 +129,17 @@ async function checkDailySchedules(currentHour, currentMinute) {
     const userId = schedule.userId;
     
     if (usersWithPosts.has(userId)) {
-      console.log(`[Schedule Checker] User ${userId} already has today's post, skipping`);
+      logger.debug('User already has daily post', { userId, reason: 'post_exists' });
       return false;
     }
     
     if (!usersWithCheckIns.has(userId)) {
-      console.log(`[Schedule Checker] User ${userId} has no check-ins today, skipping`);
+      logger.debug('User has no check-ins today', { userId, reason: 'no_checkins' });
       return false;
     }
     
     if (usersWithJobs.has(userId)) {
-      console.log(`[Schedule Checker] User ${userId} already has pending job, skipping`);
+      logger.debug('User already has pending daily job', { userId, reason: 'job_exists' });
       return false;
     }
     
@@ -143,9 +157,12 @@ async function checkDailySchedules(currentHour, currentMinute) {
       })),
     });
     
-    console.log(`[Schedule Checker] Created ${usersNeedingJobs.length} daily generation jobs`);
+    logger.info('Daily generation jobs created', {
+      jobsCreated: usersNeedingJobs.length,
+      date: today.toISOString().split('T')[0]
+    });
   } else {
-    console.log('[Schedule Checker] No daily jobs needed');
+    logger.debug('No daily jobs needed');
   }
 }
 
@@ -169,7 +186,10 @@ async function checkWeeklySchedules(currentHour, currentMinute, currentDay) {
     },
   });
   
-  console.log(`[Schedule Checker] Found ${schedules.length} users with weekly generation enabled for day ${currentDay}`);
+  logger.debug('Weekly schedules check', {
+    totalEnabled: schedules.length,
+    dayOfWeek: currentDay
+  });
   
   // Filter schedules that match current time window
   const matchingSchedules = schedules.filter(schedule =>
@@ -177,11 +197,13 @@ async function checkWeeklySchedules(currentHour, currentMinute, currentDay) {
   );
   
   if (matchingSchedules.length === 0) {
-    console.log('[Schedule Checker] No weekly schedules match current time');
+    logger.debug('No weekly schedules match current time');
     return;
   }
   
-  console.log(`[Schedule Checker] ${matchingSchedules.length} schedules match current time`);
+  logger.info('Weekly schedules matched', {
+    matchingCount: matchingSchedules.length
+  });
   
   const userIds = matchingSchedules.map(s => s.userId);
   const weekStart = startOfWeek(new Date());
@@ -233,18 +255,23 @@ async function checkWeeklySchedules(currentHour, currentMinute, currentDay) {
     const userId = schedule.userId;
     
     if (usersWithPosts.has(userId)) {
-      console.log(`[Schedule Checker] User ${userId} already has this week's post, skipping`);
+      logger.debug('User already has weekly post', { userId, reason: 'post_exists' });
       return false;
     }
     
     if (!usersWithEnoughDailyPosts.has(userId)) {
       const count = dailyPostCounts.find(c => c.userId === userId)?._count.userId || 0;
-      console.log(`[Schedule Checker] User ${userId} has only ${count} daily posts this week (need 3+), skipping`);
+      logger.debug('User has insufficient daily posts', {
+        userId,
+        reason: 'insufficient_daily_posts',
+        dailyPostCount: count,
+        required: 3
+      });
       return false;
     }
     
     if (usersWithJobs.has(userId)) {
-      console.log(`[Schedule Checker] User ${userId} already has pending weekly job, skipping`);
+      logger.debug('User already has pending weekly job', { userId, reason: 'job_exists' });
       return false;
     }
     
@@ -262,9 +289,12 @@ async function checkWeeklySchedules(currentHour, currentMinute, currentDay) {
       })),
     });
     
-    console.log(`[Schedule Checker] Created ${usersNeedingJobs.length} weekly generation jobs`);
+    logger.info('Weekly generation jobs created', {
+      jobsCreated: usersNeedingJobs.length,
+      weekStart: weekStart.toISOString().split('T')[0]
+    });
   } else {
-    console.log('[Schedule Checker] No weekly jobs needed');
+    logger.debug('No weekly jobs needed');
   }
 }
 
@@ -288,7 +318,10 @@ async function checkMonthlySchedules(currentHour, currentMinute, currentDate) {
     },
   });
   
-  console.log(`[Schedule Checker] Found ${schedules.length} users with monthly generation enabled for day ${currentDate}`);
+  logger.debug('Monthly schedules check', {
+    totalEnabled: schedules.length,
+    dayOfMonth: currentDate
+  });
   
   // Filter schedules that match current time window
   const matchingSchedules = schedules.filter(schedule =>
@@ -296,11 +329,13 @@ async function checkMonthlySchedules(currentHour, currentMinute, currentDate) {
   );
   
   if (matchingSchedules.length === 0) {
-    console.log('[Schedule Checker] No monthly schedules match current time');
+    logger.debug('No monthly schedules match current time');
     return;
   }
   
-  console.log(`[Schedule Checker] ${matchingSchedules.length} schedules match current time`);
+  logger.info('Monthly schedules matched', {
+    matchingCount: matchingSchedules.length
+  });
   
   const userIds = matchingSchedules.map(s => s.userId);
   const monthStart = startOfMonth(new Date());
@@ -352,18 +387,23 @@ async function checkMonthlySchedules(currentHour, currentMinute, currentDate) {
     const userId = schedule.userId;
     
     if (usersWithPosts.has(userId)) {
-      console.log(`[Schedule Checker] User ${userId} already has this month's post, skipping`);
+      logger.debug('User already has monthly post', { userId, reason: 'post_exists' });
       return false;
     }
     
     if (!usersWithEnoughWeeklyPosts.has(userId)) {
       const count = weeklyPostCounts.find(c => c.userId === userId)?._count.userId || 0;
-      console.log(`[Schedule Checker] User ${userId} has only ${count} weekly posts this month (need 3+), skipping`);
+      logger.debug('User has insufficient weekly posts', {
+        userId,
+        reason: 'insufficient_weekly_posts',
+        weeklyPostCount: count,
+        required: 3
+      });
       return false;
     }
     
     if (usersWithJobs.has(userId)) {
-      console.log(`[Schedule Checker] User ${userId} already has pending monthly job, skipping`);
+      logger.debug('User already has pending monthly job', { userId, reason: 'job_exists' });
       return false;
     }
     
@@ -381,8 +421,11 @@ async function checkMonthlySchedules(currentHour, currentMinute, currentDate) {
       })),
     });
     
-    console.log(`[Schedule Checker] Created ${usersNeedingJobs.length} monthly generation jobs`);
+    logger.info('Monthly generation jobs created', {
+      jobsCreated: usersNeedingJobs.length,
+      monthStart: monthStart.toISOString().split('T')[0]
+    });
   } else {
-    console.log('[Schedule Checker] No monthly jobs needed');
+    logger.debug('No monthly jobs needed');
   }
 }
