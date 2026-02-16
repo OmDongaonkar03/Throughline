@@ -1,4 +1,5 @@
 import prisma from "../db/prisma.js";
+import logger from '../utils/logger.js';
 import { isLLMConfigured, getAvailableProviders } from "../lib/llm-config.js";
 
 export const healthCheck = async (req, res) => {
@@ -37,6 +38,11 @@ export const detailedHealthCheck = async (req, res) => {
       error: error.message,
       message: "Database connection failed",
     };
+    
+    logger.error("Health check: Database connection failed", {
+      error: error.message,
+      stack: error.stack
+    });
   }
 
   // Check 2: LLM Provider Configuration
@@ -58,6 +64,10 @@ export const detailedHealthCheck = async (req, res) => {
         providers: [],
         message: "No LLM provider configured - AI features disabled",
       };
+      
+      logger.warn("Health check: No LLM provider configured", {
+        aiFeatures: "disabled"
+      });
     }
   } catch (error) {
     healthStatus.status = "degraded";
@@ -66,6 +76,11 @@ export const detailedHealthCheck = async (req, res) => {
       error: error.message,
       message: "LLM configuration check failed",
     };
+    
+    logger.error("Health check: LLM configuration check failed", {
+      error: error.message,
+      stack: error.stack
+    });
   }
 
   // Check 3: Email Configuration
@@ -81,6 +96,10 @@ export const detailedHealthCheck = async (req, res) => {
       ? "Email service configured"
       : "Email service not configured",
   };
+
+  if (!emailConfigured) {
+    logger.warn("Health check: Email service not configured");
+  }
 
   // Check 4: Required Environment Variables
   const requiredEnvVars = [
@@ -101,6 +120,10 @@ export const detailedHealthCheck = async (req, res) => {
       missing: missingEnvVars,
       message: "Required environment variables missing",
     };
+    
+    logger.error("Health check: Missing required environment variables", {
+      missing: missingEnvVars
+    });
   } else {
     healthStatus.checks.environment = {
       status: "healthy",
@@ -130,6 +153,13 @@ export const detailedHealthCheck = async (req, res) => {
         : "Memory usage normal",
   };
 
+  if (heapUsagePercent > 80) {
+    logger.warn("Health check: High memory usage detected", {
+      heapUsagePercent: Math.round(heapUsagePercent),
+      memoryUsageMB
+    });
+  }
+
   // Check 6: Scheduler Status
   const cronDisabled = process.env.DISABLE_INTERNAL_CRON === "true";
   
@@ -153,6 +183,15 @@ export const detailedHealthCheck = async (req, res) => {
     healthStatus.status = "unhealthy";
   } else if (degradedChecks.length > 0) {
     healthStatus.status = "degraded";
+  }
+
+  // Log overall health status
+  if (healthStatus.status !== "healthy") {
+    logger.warn("Health check completed with issues", {
+      status: healthStatus.status,
+      unhealthyChecks: unhealthyChecks.length,
+      degradedChecks: degradedChecks.length
+    });
   }
 
   // Return appropriate HTTP status code
@@ -183,6 +222,7 @@ export const readinessCheck = async (req, res) => {
     );
 
     if (!allEnvPresent) {
+      logger.error("Readiness check failed: Missing environment variables");
       return res.status(503).json({
         ready: false,
         message: "Required environment variables missing",
@@ -194,6 +234,11 @@ export const readinessCheck = async (req, res) => {
       message: "Application ready to serve traffic",
     });
   } catch (error) {
+    logger.error("Readiness check failed", {
+      error: error.message,
+      stack: error.stack
+    });
+    
     res.status(503).json({
       ready: false,
       message: "Application not ready",

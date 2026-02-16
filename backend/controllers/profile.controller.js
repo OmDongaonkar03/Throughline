@@ -1,6 +1,7 @@
 import prisma from "../db/prisma.js";
 import crypto from "crypto";
 import { sanitizeText } from "../utils/sanitize.js";
+import logger, { logUserAction } from '../utils/logger.js';
 import { generateVerificationToken, verifyVerificationToken } from "../utils/jwt.js";
 import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
@@ -193,6 +194,11 @@ export const updateProfileData = asyncHandler(async (req, res) => {
     },
   });
 
+  logUserAction("profile_updated", userId, {
+    fieldsUpdated: Object.keys(updateData).filter(k => k !== 'updatedAt'),
+    emailChanged: false
+  });
+
   res.json({
     message: "Profile updated successfully",
     user: updatedUser,
@@ -280,6 +286,10 @@ export const verifyUser = asyncHandler(async (req, res) => {
     });
 
     return user;
+  });
+
+  logUserAction("email_verified", decoded.userId, {
+    email: decoded.email
   });
 
   res.json({ 

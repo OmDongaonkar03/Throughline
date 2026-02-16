@@ -1,5 +1,6 @@
 import prisma from "../db/prisma.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import logger from '../utils/logger.js';
 import { ValidationError, NotFoundError } from "../utils/errors.js";
 import { sanitizeText } from "../utils/sanitize.js";
 
@@ -57,6 +58,21 @@ export const submitFeedback = asyncHandler(async (req, res) => {
         rating,
         issue: issue || null,
       },
+    });
+  }
+
+  logger.info("Feedback submitted", {
+    userId,
+    postId,
+    rating,
+    hasIssue: !!issue
+  });
+
+  if (rating === 1) {
+    logger.warn("Negative feedback received", {
+      userId,
+      postId,
+      issue: issue || "No issue specified"
     });
   }
 

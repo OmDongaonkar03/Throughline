@@ -1,6 +1,7 @@
 import prisma from "../db/prisma.js";
 import { sanitizeText } from "../utils/sanitize.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import logger, { logUserAction } from '../utils/logger.js';
 import {
   ValidationError,
   RateLimitError,
@@ -42,6 +43,11 @@ export const createCheckIn = asyncHandler(async (req, res) => {
   });
 
   if (todayCount >= 24) {
+    logger.warn("Check-in daily limit reached", {
+      userId,
+      limit: 24,
+      date: startOfDay.toISOString().split('T')[0]
+    });
     throw new RateLimitError("Daily check-in limit reached (24 per day)");
   }
 
@@ -65,6 +71,11 @@ export const createCheckIn = asyncHandler(async (req, res) => {
       createdAt: true,
       userId: true,
     },
+  });
+
+  logUserAction("checkin_created", userId, {
+    date: now.toISOString().split('T')[0],
+    contentLength: sanitizedContent.length
   });
 
   res.status(201).json({

@@ -1,5 +1,6 @@
 import prisma from "../db/prisma.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import logger, { logUserAction } from '../utils/logger.js';
 import { sanitizeText, sanitizeArray } from "../utils/sanitize.js";
 import { ValidationError } from "../utils/errors.js";
 
@@ -95,8 +96,9 @@ export const updateToneProfileCustomizations = asyncHandler(
     });
 
     let profile;
+    const isCreating = !existingProfile;
 
-    if (!existingProfile) {
+    if (isCreating) {
       profile = await prisma.toneProfile.create({
         data: {
           userId,
@@ -123,12 +125,33 @@ export const updateToneProfileCustomizations = asyncHandler(
         },
       });
 
+      logUserAction("tone_profile_created", userId, {
+        method: "manual",
+        hasCustomVoice: !!customVoice,
+        hasWritingGoals: !!writingGoals,
+        hasTargetAudience: !!targetAudience
+      });
+
       return res.status(201).json({
         message: "Tone profile created successfully",
         toneProfile: profile,
         created: true,
       });
     }
+
+    // Track what fields are being updated
+    const updatedFields = [];
+    if (customVoice !== undefined) updatedFields.push('customVoice');
+    if (customSentenceStyle !== undefined) updatedFields.push('customSentenceStyle');
+    if (customEmotionalRange !== undefined) updatedFields.push('customEmotionalRange');
+    if (writingGoals !== undefined) updatedFields.push('writingGoals');
+    if (targetAudience !== undefined) updatedFields.push('targetAudience');
+    if (contentPurpose !== undefined) updatedFields.push('contentPurpose');
+    if (toneCharacteristics !== undefined) updatedFields.push('toneCharacteristics');
+    if (avoidTopics !== undefined) updatedFields.push('avoidTopics');
+    if (preferredLength !== undefined) updatedFields.push('preferredLength');
+    if (includeEmojis !== undefined) updatedFields.push('includeEmojis');
+    if (includeHashtags !== undefined) updatedFields.push('includeHashtags');
 
     profile = await prisma.toneProfile.update({
       where: { userId },
@@ -177,6 +200,11 @@ export const updateToneProfileCustomizations = asyncHandler(
         lastManualEdit: new Date(),
         updatedAt: new Date(),
       },
+    });
+
+    logUserAction("tone_profile_updated", userId, {
+      fieldsUpdated: updatedFields,
+      updateCount: updatedFields.length
     });
 
     res.json({

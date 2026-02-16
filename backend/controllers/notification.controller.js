@@ -1,5 +1,6 @@
 import prisma from "../db/prisma.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import logger, { logUserAction } from '../utils/logger.js';
 import { ValidationError } from "../utils/errors.js";
 
 export const getNotificationSettings = asyncHandler(async (req, res) => {
@@ -30,6 +31,13 @@ export const getNotificationSettings = asyncHandler(async (req, res) => {
         weeklyReport: true,
       },
     });
+
+    logger.info("Notification settings created with defaults", {
+      userId,
+      emailDigest: true,
+      postReminders: true,
+      weeklyReport: false
+    });
   }
 
   res.json({
@@ -53,23 +61,28 @@ export const updateNotificationSettings = asyncHandler(async (req, res) => {
   }
 
   const updates = {};
+  const updatedFields = [];
+
   if (emailDigest !== undefined) {
     if (typeof emailDigest !== "boolean") {
       throw new ValidationError("emailDigest must be a boolean value");
     }
     updates.emailDigest = emailDigest;
+    updatedFields.push('emailDigest');
   }
   if (postReminders !== undefined) {
     if (typeof postReminders !== "boolean") {
       throw new ValidationError("postReminders must be a boolean value");
     }
     updates.postReminders = postReminders;
+    updatedFields.push('postReminders');
   }
   if (weeklyReport !== undefined) {
     if (typeof weeklyReport !== "boolean") {
       throw new ValidationError("weeklyReport must be a boolean value");
     }
     updates.weeklyReport = weeklyReport;
+    updatedFields.push('weeklyReport');
   }
 
   const settings = await prisma.notificationSettings.upsert({
@@ -87,6 +100,15 @@ export const updateNotificationSettings = asyncHandler(async (req, res) => {
       postReminders: true,
       weeklyReport: true,
     },
+  });
+
+  logUserAction("notification_settings_updated", userId, {
+    fieldsUpdated: updatedFields,
+    newSettings: {
+      emailDigest: settings.emailDigest,
+      postReminders: settings.postReminders,
+      weeklyReport: settings.weeklyReport
+    }
   });
 
   res.json({

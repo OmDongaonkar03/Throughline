@@ -1,6 +1,7 @@
 import prisma from "../db/prisma.js";
 import DOMPurify from "dompurify";
 import { JSDOM } from "jsdom";
+import logger from '../utils/logger.js';
 import {
   getToneProfile,
   updateToneProfile,
@@ -48,6 +49,12 @@ export const extractTone = asyncHandler(async (req, res) => {
   }
 
   const toneProfile = await updateToneProfile(userId, prisma);
+
+  logger.info("Tone extraction completed", {
+    userId,
+    modelUsed: toneProfile.modelUsed,
+    samplePostsCount: samplePosts.length
+  });
 
   res.json({
     message: "Tone profile extracted successfully",
@@ -118,6 +125,13 @@ export const generateDaily = asyncHandler(async (req, res) => {
     prisma,
     true
   );
+
+  logger.info("Daily post generated", {
+    userId,
+    date: targetDate.toISOString().split('T')[0],
+    generationType: "manual",
+    version: result.basePost.version
+  });
 
   res.json({
     message: "Daily post generated successfully",
@@ -201,6 +215,13 @@ export const generateWeekly = asyncHandler(async (req, res) => {
     true
   );
 
+  logger.info("Weekly post generated", {
+    userId,
+    date: targetDate.toISOString().split('T')[0],
+    generationType: "manual",
+    version: result.basePost.version
+  });
+
   res.json({
     message: "Weekly post generated successfully",
     post: {
@@ -280,6 +301,13 @@ export const generateMonthly = asyncHandler(async (req, res) => {
     prisma,
     true
   );
+
+  logger.info("Monthly post generated", {
+    userId,
+    date: targetDate.toISOString().split('T')[0],
+    generationType: "manual",
+    version: result.basePost.version
+  });
 
   res.json({
     message: "Monthly post generated successfully",

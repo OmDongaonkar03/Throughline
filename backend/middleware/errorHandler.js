@@ -1,7 +1,8 @@
 import { AppError } from "../utils/errors.js";
+import logger from "../utils/logger.js";
 
 /**
- * Check if error should be logged as error (vs info)
+ * Check if error should be logged as error (vs warn/info)
  * Don't log common expected errors at ERROR level
  */
 const shouldLogAsError = (error) => {
@@ -36,7 +37,7 @@ const sanitizeErrorMessage = (message) => {
 };
 
 /**
- * Log error with appropriate level and structure
+ * Log error with appropriate level and structure using Winston
  */
 const logError = (error, req) => {
   const logData = {
@@ -47,17 +48,19 @@ const logError = (error, req) => {
     method: req.method,
     ip: req.ip,
     userId: req.user?.id,
-    timestamp: new Date().toISOString(),
+    userAgent: req.get('user-agent')
   };
 
-  if (shouldLogAsError(error)) {
-    console.error("[ERROR]", JSON.stringify(logData, null, 2));
+  // Add stack trace for actual errors (not client errors)
+  if (shouldLogAsError(error) && error.stack) {
+    logData.stack = error.stack;
+  }
 
-    if (process.env.NODE_ENV === "development" && error.stack) {
-      console.error("[STACK]", error.stack);
-    }
+  // Log at appropriate level
+  if (shouldLogAsError(error)) {
+    logger.error("Request error", logData);
   } else {
-    console.log("[INFO]", JSON.stringify(logData, null, 2));
+    logger.warn("Client error", logData);
   }
 };
 

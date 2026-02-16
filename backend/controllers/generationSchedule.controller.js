@@ -1,5 +1,6 @@
 import prisma from "../db/prisma.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import logger, { logUserAction } from '../utils/logger.js';
 import { ValidationError } from "../utils/errors.js";
 
 export const getScheduleSettings = asyncHandler(async (req, res) => {
@@ -130,6 +131,12 @@ export const updateScheduleSettings = asyncHandler(async (req, res) => {
   const schedule = await prisma.generationSchedule.update({
     where: { userId },
     data: updateData,
+  });
+
+  logUserAction("schedule_updated", userId, {
+    dailyEnabled: schedule.dailyEnabled,
+    weeklyEnabled: schedule.weeklyEnabled,
+    monthlyEnabled: schedule.monthlyEnabled
   });
 
   res.json({

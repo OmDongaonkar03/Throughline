@@ -17,6 +17,7 @@ import { sendMail } from "../utils/mail.js";
 import { verificationEmailTemplate } from "../templates/verificationEmail.js";
 import { passwordResetEmailTemplate } from "../templates/passwordResetEmail.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import logger, { logUserAction, logSecurityEvent, logError } from '../utils/logger.js';
 import {
   ValidationError,
   AuthenticationError,
@@ -190,6 +191,12 @@ export const signup = asyncHandler(async (req, res) => {
   }
   res.cookie("refreshToken", refreshTokenValue, cookieOptions);
 
+  logUserAction("signup", result.id, {
+    email: result.email,
+    method: "email",
+    verified: result.verified
+  });
+
   res.status(201).json({
     message:
       "User created successfully. Please check your email to verify your account.",
@@ -237,6 +244,12 @@ export const login = asyncHandler(async (req, res) => {
     const newAttempts = user.loginAttempts + 1;
     const shouldLock = newAttempts >= 5;
     
+    logSecurityEvent("failed_login_attempt", {
+      email,
+      ip: req.ip,
+      attempts: newAttempts
+    });
+    
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -248,6 +261,14 @@ export const login = asyncHandler(async (req, res) => {
     });
 
     if (shouldLock) {
+      logSecurityEvent("account_locked", {
+        userId: user.id,
+        email: user.email,
+        ip: req.ip,
+        reason: "brute_force",
+        attempts: newAttempts
+      });
+      
       throw new AuthenticationError(
         "Too many failed login attempts. Account locked for 15 minutes."
       );
@@ -313,6 +334,12 @@ export const login = asyncHandler(async (req, res) => {
     cookieOptions.sameSite = "lax";
   }
   res.cookie("refreshToken", refreshToken, cookieOptions);
+
+  logUserAction("login", user.id, {
+    email: user.email,
+    ip: req.ip,
+    verified: user.verified
+  });
 
   res.json({
     message: "Login successful",
@@ -499,6 +526,12 @@ export const googleCallback = asyncHandler(async (req, res) => {
     cookieOptions.sameSite = "lax";
   }
   res.cookie("refreshToken", refreshTokenValue, cookieOptions);
+
+  logUserAction(existingUserByEmail ? "login" : "signup", user.id, {
+    email: user.email,
+    method: "google_oauth",
+    isNewUser: !existingUserByEmail
+  });
 
   const userData = encodeURIComponent(
     JSON.stringify({
@@ -864,6 +897,11 @@ export const resetPassword = asyncHandler(async (req, res) => {
     return tokenUpdate;
   });
 
+  logUserAction("password_reset", storedToken.userId, {
+    email: storedToken.email,
+    ip: req.ip
+  });
+
   res.json({
     message: "Password reset successful. Please login with your new password.",
   });
@@ -901,6 +939,10 @@ export const completeOnboarding = asyncHandler(async (req, res) => {
       hasCompletedOnboarding: true,
       createdAt: true,
     },
+  });
+
+  logUserAction("onboarding_completed", userId, {
+    email: user.email
   });
 
   res.json({

@@ -1,5 +1,6 @@
 import prisma from "../db/prisma.js";
 import { sanitizeText } from "../utils/sanitize.js";
+import logger, { logUserAction } from '../utils/logger.js';
 import { updateToneProfile } from "../mastra/index.js";
 import { isLLMConfigured } from "../lib/llm-config.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
@@ -69,6 +70,11 @@ export const createSamplePost = asyncHandler(async (req, res) => {
   });
 
   const newCount = existingCount + 1;
+
+  logUserAction("sample_post_created", userId, {
+    contentLength: sanitizedContent.length,
+    totalPosts: newCount
+  });
 
   res.status(201).json({
     message: "Sample post created successfully",
@@ -142,6 +148,11 @@ export const deleteSamplePost = asyncHandler(async (req, res) => {
 
   const remainingCount = await prisma.samplePost.count({
     where: { userId },
+  });
+
+  logUserAction("sample_post_deleted", userId, {
+    postId: id,
+    remainingCount
   });
 
   res.json({
