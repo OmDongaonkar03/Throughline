@@ -13,15 +13,17 @@ import {
 } from "../../../lib/token-usage.js";
 import { createDailyGeneratorAgent } from "../prompts/daily-prompt.js";
 import { parseDailyPostResponse } from "../parsers/daily-parser.js";
+import logger, { logError } from "../../../utils/logger.js";
 
-export async function generateDailyPost(
-  userId,
-  targetDate,
-  prisma,
-  isManual = false,
-) {
+export async function generateDailyPost(userId, targetDate, isManual = false) {
   const startDate = startOfDay(targetDate);
   const endDate = endOfDay(targetDate);
+
+  logger.info("Starting daily post generation", {
+    userId,
+    targetDate: formatDate(targetDate),
+    isManual,
+  });
 
   // Fetch check-ins
   let checkIns;
@@ -39,12 +41,26 @@ export async function generateDailyPost(
       },
     });
   } catch (error) {
+    logError("Failed to fetch check-ins for daily generation", error, {
+      userId,
+      targetDate: formatDate(targetDate),
+    });
     throw new DatabaseError(`Failed to fetch check-ins: ${error.message}`);
   }
 
   if (checkIns.length === 0) {
+    logger.warn("No check-ins found for daily generation", {
+      userId,
+      targetDate: formatDate(targetDate),
+    });
     throw new NotFoundError("No check-ins found for this date");
   }
+
+  logger.debug("Check-ins retrieved for daily generation", {
+    userId,
+    checkInCount: checkIns.length,
+    targetDate: formatDate(targetDate),
+  });
 
   // Fetch tone profile
   let toneProfile;
@@ -53,6 +69,9 @@ export async function generateDailyPost(
       where: { userId },
     });
   } catch (error) {
+    logError("Failed to fetch tone profile for daily generation", error, {
+      userId,
+    });
     throw new DatabaseError(`Failed to fetch tone profile: ${error.message}`);
   }
 
@@ -89,8 +108,19 @@ Your task:
 
   // Generate content
   try {
+    logger.debug("Sending prompt to LLM for daily generation", {
+      userId,
+      checkInCount: checkIns.length,
+      modelUsed: getModelString(),
+    });
+
     const response = await retryWithBackoff(async () => {
       return await withTimeout(agent.generate(prompt), 60000);
+    });
+
+    logger.debug("LLM response received for daily generation", {
+      userId,
+      tokenUsage: response.usage,
     });
 
     // Parse response
@@ -147,6 +177,10 @@ Your task:
         });
       });
     } catch (error) {
+      logError("Failed to save generated daily post", error, {
+        userId,
+        targetDate: formatDate(targetDate),
+      });
       throw new DatabaseError(
         `Failed to save generated post: ${error.message}`,
       );
@@ -155,7 +189,7 @@ Your task:
     // Save token usage
     const modelUsed = getModelString();
     const estimatedCost = calculateEstimatedCost(response.usage, modelUsed);
-    
+
     saveGeneratedPostTokenUsage(prisma, {
       generatedPostId: generatedPost.id,
       usage: response.usage,
@@ -164,12 +198,27 @@ Your task:
       estimatedCost,
     });
 
+    logger.info("Daily post generated successfully", {
+      userId,
+      postId: generatedPost.id,
+      targetDate: formatDate(targetDate),
+      version: generatedPost.version,
+      generationType: generatedPost.generationType,
+      checkInCount: checkIns.length,
+      tokenUsage: response.usage,
+      estimatedCost,
+    });
+
     return generatedPost;
   } catch (error) {
     if (error instanceof DatabaseError || error instanceof NotFoundError) {
       throw error;
     }
-    console.error("Daily generation error:", error);
+    logError("Daily generation error", error, {
+      userId,
+      targetDate: formatDate(targetDate),
+      checkInCount: checkIns.length,
+    });
     throw new LLMError(`Failed to generate daily post: ${error.message}`);
   }
 }
@@ -188,14 +237,28 @@ export async function getOrGenerateDailyPost(userId, targetDate, prisma) {
       },
     });
   } catch (error) {
+    logError("Failed to check for existing daily post", error, {
+      userId,
+      targetDate: formatDate(targetDate),
+    });
     throw new DatabaseError(
       `Failed to check for existing post: ${error.message}`,
     );
   }
 
   if (existingPost) {
+    logger.debug("Existing daily post found, skipping generation", {
+      userId,
+      postId: existingPost.id,
+      targetDate: formatDate(targetDate),
+    });
     return existingPost;
   }
+
+  logger.debug("No existing daily post found, generating new", {
+    userId,
+    targetDate: formatDate(targetDate),
+  });
 
   return await generateDailyPost(userId, targetDate, prisma, false);
 }

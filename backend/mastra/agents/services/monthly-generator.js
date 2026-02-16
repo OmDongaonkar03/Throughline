@@ -13,6 +13,7 @@ import {
 } from "../../../lib/token-usage.js";
 import { createMonthlyGeneratorAgent } from "../prompts/monthly-prompt.js";
 import { parseMonthlyPostResponse } from "../parsers/monthly-parser.js";
+import logger, { logError } from "../../../utils/logger.js";
 
 export async function generateMonthlyPost(
   userId,
@@ -22,6 +23,19 @@ export async function generateMonthlyPost(
 ) {
   const monthStart = startOfMonth(targetDate);
   const monthEnd = endOfMonth(targetDate);
+
+  const monthName = new Date(monthStart).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  logger.info("Starting monthly post generation", {
+    userId,
+    month: monthName,
+    monthStart: monthStart.toISOString().split("T")[0],
+    monthEnd: monthEnd.toISOString().split("T")[0],
+    isManual,
+  });
 
   // Fetch weekly posts
   let weeklyPosts;
@@ -41,12 +55,26 @@ export async function generateMonthlyPost(
       },
     });
   } catch (error) {
+    logError("Failed to fetch weekly posts for monthly generation", error, {
+      userId,
+      month: monthName,
+    });
     throw new DatabaseError(`Failed to fetch weekly posts: ${error.message}`);
   }
 
   if (weeklyPosts.length === 0) {
+    logger.warn("No weekly posts found for monthly generation", {
+      userId,
+      month: monthName,
+    });
     throw new NotFoundError("No weekly posts found for this month");
   }
+
+  logger.debug("Weekly posts retrieved for monthly generation", {
+    userId,
+    weeklyPostCount: weeklyPosts.length,
+    month: monthName,
+  });
 
   // Fetch tone profile
   let toneProfile;
@@ -55,6 +83,9 @@ export async function generateMonthlyPost(
       where: { userId },
     });
   } catch (error) {
+    logError("Failed to fetch tone profile for monthly generation", error, {
+      userId,
+    });
     throw new DatabaseError(`Failed to fetch tone profile: ${error.message}`);
   }
 
@@ -81,11 +112,6 @@ ${post.content}
     })
     .join("\n\n---\n\n");
 
-  const monthName = new Date(monthStart).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-
   // Generate prompt
   const prompt = `Synthesize these weekly narratives into a monthly reflection in the user's authentic voice.
 
@@ -98,8 +124,20 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
 
   // Generate content
   try {
+    logger.debug("Sending prompt to LLM for monthly generation", {
+      userId,
+      weeklyPostCount: weeklyPosts.length,
+      month: monthName,
+      modelUsed: getModelString(),
+    });
+
     const response = await retryWithBackoff(async () => {
       return await withTimeout(agent.generate(prompt), 60000);
+    });
+
+    logger.debug("LLM response received for monthly generation", {
+      userId,
+      tokenUsage: response.usage,
     });
 
     // Parse response
@@ -160,6 +198,10 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
         });
       });
     } catch (error) {
+      logError("Failed to save generated monthly post", error, {
+        userId,
+        month: monthName,
+      });
       throw new DatabaseError(
         `Failed to save generated post: ${error.message}`,
       );
@@ -168,7 +210,7 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
     // Save token usage
     const modelUsed = getModelString();
     const estimatedCost = calculateEstimatedCost(response.usage, modelUsed);
-    
+
     saveGeneratedPostTokenUsage(prisma, {
       generatedPostId: generatedPost.id,
       usage: response.usage,
@@ -177,12 +219,27 @@ Your task: Show the arc of this month. What was it fundamentally about? How did 
       estimatedCost,
     });
 
+    logger.info("Monthly post generated successfully", {
+      userId,
+      postId: generatedPost.id,
+      month: monthName,
+      version: generatedPost.version,
+      generationType: generatedPost.generationType,
+      weeksCovered: weeklyPosts.length,
+      tokenUsage: response.usage,
+      estimatedCost,
+    });
+
     return generatedPost;
   } catch (error) {
     if (error instanceof DatabaseError || error instanceof NotFoundError) {
       throw error;
     }
-    console.error("Monthly generation error:", error);
+    logError("Monthly generation error", error, {
+      userId,
+      month: monthName,
+      weeklyPostCount: weeklyPosts.length,
+    });
     throw new LLMError(`Failed to generate monthly post: ${error.message}`);
   }
 }
@@ -201,14 +258,39 @@ export async function getOrGenerateMonthlyPost(userId, targetDate, prisma) {
       },
     });
   } catch (error) {
+    const monthName = new Date(monthStart).toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+    logError("Failed to check for existing monthly post", error, {
+      userId,
+      month: monthName,
+    });
     throw new DatabaseError(
       `Failed to check for existing post: ${error.message}`,
     );
   }
 
   if (existingPost) {
+    const monthName = new Date(monthStart).toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+    logger.debug("Existing monthly post found, skipping generation", {
+      userId,
+      postId: existingPost.id,
+      month: monthName,
+    });
     return existingPost;
   }
+
+  logger.debug("No existing monthly post found, generating new", {
+    userId,
+    month: new Date(monthStart).toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    }),
+  });
 
   return await generateMonthlyPost(userId, targetDate, prisma, false);
 }

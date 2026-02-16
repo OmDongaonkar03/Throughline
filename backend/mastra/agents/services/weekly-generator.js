@@ -13,6 +13,7 @@ import {
 } from "../../../lib/token-usage.js";
 import { createWeeklyGeneratorAgent } from "../prompts/weekly-prompt.js";
 import { parseWeeklyPostResponse } from "../parsers/weekly-parser.js";
+import logger, { logError } from "../../../utils/logger.js";
 
 export async function generateWeeklyPost(
   userId,
@@ -22,6 +23,13 @@ export async function generateWeeklyPost(
 ) {
   const weekStart = startOfWeek(targetDate);
   const weekEnd = endOfWeek(targetDate);
+
+  logger.info("Starting weekly post generation", {
+    userId,
+    weekStart: formatDate(weekStart),
+    weekEnd: formatDate(weekEnd),
+    isManual,
+  });
 
   // Fetch daily posts
   let dailyPosts;
@@ -41,12 +49,29 @@ export async function generateWeeklyPost(
       },
     });
   } catch (error) {
+    logError("Failed to fetch daily posts for weekly generation", error, {
+      userId,
+      weekStart: formatDate(weekStart),
+      weekEnd: formatDate(weekEnd),
+    });
     throw new DatabaseError(`Failed to fetch daily posts: ${error.message}`);
   }
 
   if (dailyPosts.length === 0) {
+    logger.warn("No daily posts found for weekly generation", {
+      userId,
+      weekStart: formatDate(weekStart),
+      weekEnd: formatDate(weekEnd),
+    });
     throw new NotFoundError("No daily posts found for this week");
   }
+
+  logger.debug("Daily posts retrieved for weekly generation", {
+    userId,
+    dailyPostCount: dailyPosts.length,
+    weekStart: formatDate(weekStart),
+    weekEnd: formatDate(weekEnd),
+  });
 
   // Fetch tone profile
   let toneProfile;
@@ -55,6 +80,9 @@ export async function generateWeeklyPost(
       where: { userId },
     });
   } catch (error) {
+    logError("Failed to fetch tone profile for weekly generation", error, {
+      userId,
+    });
     throw new DatabaseError(`Failed to fetch tone profile: ${error.message}`);
   }
 
@@ -91,8 +119,19 @@ Your task: Find the pattern or thread that connects these days. Show what the we
 
   // Generate content
   try {
+    logger.debug("Sending prompt to LLM for weekly generation", {
+      userId,
+      dailyPostCount: dailyPosts.length,
+      modelUsed: getModelString(),
+    });
+
     const response = await retryWithBackoff(async () => {
       return await withTimeout(agent.generate(prompt), 60000);
+    });
+
+    logger.debug("LLM response received for weekly generation", {
+      userId,
+      tokenUsage: response.usage,
     });
 
     // Parse response
@@ -152,6 +191,10 @@ Your task: Find the pattern or thread that connects these days. Show what the we
         });
       });
     } catch (error) {
+      logError("Failed to save generated weekly post", error, {
+        userId,
+        weekStart: formatDate(weekStart),
+      });
       throw new DatabaseError(
         `Failed to save generated post: ${error.message}`,
       );
@@ -160,7 +203,7 @@ Your task: Find the pattern or thread that connects these days. Show what the we
     // Save token usage
     const modelUsed = getModelString();
     const estimatedCost = calculateEstimatedCost(response.usage, modelUsed);
-    
+
     saveGeneratedPostTokenUsage(prisma, {
       generatedPostId: generatedPost.id,
       usage: response.usage,
@@ -169,12 +212,29 @@ Your task: Find the pattern or thread that connects these days. Show what the we
       estimatedCost,
     });
 
+    logger.info("Weekly post generated successfully", {
+      userId,
+      postId: generatedPost.id,
+      weekStart: formatDate(weekStart),
+      weekEnd: formatDate(weekEnd),
+      version: generatedPost.version,
+      generationType: generatedPost.generationType,
+      daysCovered: dailyPosts.length,
+      tokenUsage: response.usage,
+      estimatedCost,
+    });
+
     return generatedPost;
   } catch (error) {
     if (error instanceof DatabaseError || error instanceof NotFoundError) {
       throw error;
     }
-    console.error("Weekly generation error:", error);
+    logError("Weekly generation error", error, {
+      userId,
+      weekStart: formatDate(weekStart),
+      weekEnd: formatDate(weekEnd),
+      dailyPostCount: dailyPosts.length,
+    });
     throw new LLMError(`Failed to generate weekly post: ${error.message}`);
   }
 }
@@ -193,14 +253,28 @@ export async function getOrGenerateWeeklyPost(userId, targetDate, prisma) {
       },
     });
   } catch (error) {
+    logError("Failed to check for existing weekly post", error, {
+      userId,
+      weekStart: formatDate(weekStart),
+    });
     throw new DatabaseError(
       `Failed to check for existing post: ${error.message}`,
     );
   }
 
   if (existingPost) {
+    logger.debug("Existing weekly post found, skipping generation", {
+      userId,
+      postId: existingPost.id,
+      weekStart: formatDate(weekStart),
+    });
     return existingPost;
   }
+
+  logger.debug("No existing weekly post found, generating new", {
+    userId,
+    weekStart: formatDate(weekStart),
+  });
 
   return await generateWeeklyPost(userId, targetDate, prisma, false);
 }
